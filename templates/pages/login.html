@@ -1,0 +1,34 @@
+{{ template "base.html" . }}
+
+{{ define "login_content" }}
+<form hx-post="/login" 
+      hx-target="#app-root" 
+      hx-select="#app-root"
+      hx-swap="outerHTML" 
+      class="bg-gray-800 border border-gray-700 p-8 rounded-lg shadow-xl w-full max-w-md">
+    
+    <h1 class="text-2xl font-bold mb-6 text-white text-center">LogIn</h1>
+    
+    {{ if .Error }}
+    <div class="bg-red-500/10 border border-red-500 text-red-400 text-sm p-3 rounded mb-4">
+        {{ .Error }}
+    </div>
+    {{ end }}
+
+    <div class="mb-4">
+        <label class="block mb-2 text-xs font-semibold uppercase text-gray-400">Username</label>
+        <input type="text" name="username" required 
+               class="w-full p-2.5 bg-gray-700 border border-gray-600 text-white rounded focus:outline-none focus:border-blue-500">
+    </div>
+
+    <div class="mb-6">
+        <label class="block mb-2 text-xs font-semibold uppercase text-gray-400">Password</label>
+        <input type="password" name="password" required 
+               class="w-full p-2.5 bg-gray-700 border border-gray-600 text-white rounded focus:outline-none focus:border-blue-500">
+    </div>
+
+    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium p-2.5 rounded transition">
+        Login
+    </button>
+</form>
+{{ end }}

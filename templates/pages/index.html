@@ -1,14 +1,6 @@
 {{ template "base.html" . }}
 
-{{ define "content" }}
-<!-- Sidebar for DB Tree -->
-<aside class="w-64 bg-gray-800 border-r border-gray-700 p-4">
-    <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Databases</h2>
-    <div id="tree-root" hx-get="/api/tree" hx-trigger="load" hx-swap="innerHTML">
-        <span class="text-sm text-gray-500">Loading hierarchy...</span>
-    </div>
-</aside>
-
+{{ define "main_content" }}
 <!-- Main Workbench Content Area -->
 <main class="flex-1 p-6" id="main-content">
     <h1 class="text-xl font-bold">SQL Editor</h1>
