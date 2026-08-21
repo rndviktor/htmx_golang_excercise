@@ -1,0 +1,13 @@
+<ul class="space-y-1 text-sm pl-2">
+    {{ range .Schemas }}
+    <li>
+        <button class="hover:text-blue-400"
+                hx-get="/api/schemas/{{ . }}/tables"
+                hx-target="#schema-{{ . }}"
+                hx-swap="innerHTML">
+            📁 {{ . }}
+        </button>
+        <div id="schema-{{ . }}" class="ml-4"></div>
+    </li>
+    {{ end }}
+</ul>
