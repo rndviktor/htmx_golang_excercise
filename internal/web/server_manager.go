@@ -3,7 +3,10 @@ package web
 import (
 	"context"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -22,19 +25,106 @@ type ServerConfig struct {
 	DBName   string
 	Username string
 	Password string
+	SslMode  string
 }
 
 func (c ServerConfig) DSN() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		c.Username, c.Password, c.Host, c.Port, c.DBName)
+	sslMode := c.SslMode
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		c.Username, c.Password, c.Host, c.Port, c.DBName, sslMode)
 }
+
+// validSslModes are the libpq sslmode values accepted from the register form.
+var validSslModes = map[string]bool{"disable": true, "prefer": true, "require": true}
 
 // Global/Server-level pool storage map
 var (
 	serverPools   = make(map[string]*pgxpool.Pool)
 	serverConfigs = make(map[string]ServerConfig)
+	dbPools       = make(map[int64]*pgxpool.Pool)
 	mu            sync.RWMutex
 )
+
+// getOrCreatePool returns a cached pgx pool for the SQLite server row id,
+// creating it on first use from the stored connection settings. Rows created
+// before passwords were persisted have a NULL password; for those, fall back
+// to a password captured in-memory when the server was registered.
+func (s *Server) getOrCreatePool(ctx context.Context, id int64) (*pgxpool.Pool, error) {
+	mu.RLock()
+	pool, ok := dbPools[id]
+	mu.RUnlock()
+	if ok {
+		return pool, nil
+	}
+
+	srv, err := s.DB.GetServerByID(ctx, sqlc.GetServerByIDParams{ID: id, UserID: db.DefaultUserID})
+	if err != nil {
+		return nil, fmt.Errorf("server %d not found", id)
+	}
+
+	password := ""
+	if srv.Password.Valid {
+		password = srv.Password.String
+	} else {
+		password = cachedPassword(srv.Name, srv.Host, srv.Port)
+	}
+
+	sslMode := srv.SslMode
+	if sslMode == "" {
+		sslMode = "prefer"
+	}
+
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(srv.Username, password),
+		Host:   net.JoinHostPort(srv.Host, strconv.FormatInt(srv.Port, 10)),
+		Path:   "/" + srv.MaintenanceDb,
+	}
+	q := u.Query()
+	q.Set("sslmode", sslMode)
+	q.Set("connect_timeout", "5")
+	u.RawQuery = q.Encode()
+
+	connectCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+
+	pool, err = pgxpool.New(connectCtx, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+	if err := pool.Ping(connectCtx); err != nil {
+		pool.Close()
+		if password == "" {
+			return nil, fmt.Errorf(
+				"connection failed and no password is stored for this server "+
+					"(remove it and register again to save credentials): %w", err)
+		}
+		return nil, fmt.Errorf("connection failed: %w", err)
+	}
+
+	mu.Lock()
+	dbPools[id] = pool
+	mu.Unlock()
+	log.Printf("Connected to server %d (%s:%d/%s)", id, srv.Host, srv.Port, srv.MaintenanceDb)
+
+	return pool, nil
+}
+
+// cachedPassword looks up a password from the in-memory configs registered
+// during this session, matching on name/host/port.
+func cachedPassword(name, host string, port int64) string {
+	mu.RLock()
+	defer mu.RUnlock()
+	for _, cfg := range serverConfigs {
+		if cfg.Name == name && cfg.Host == host && int64(cfg.Port) == port {
+			return cfg.Password
+		}
+	}
+	return ""
+}
 
 func (s *Server) handleAddServer(w http.ResponseWriter, r *http.Request) {
 	// Chi handlers use the standard http.HandlerFunc signature; the chi route
@@ -47,6 +137,11 @@ func (s *Server) handleAddServer(w http.ResponseWriter, r *http.Request) {
 		port = 5432
 	}
 
+	sslMode := r.FormValue("sslmode")
+	if !validSslModes[sslMode] {
+		sslMode = "disable"
+	}
+
 	cfg := ServerConfig{
 		ID:       fmt.Sprintf("server-%d", time.Now().UnixNano()),
 		Name:     r.FormValue("name"),
@@ -55,6 +150,7 @@ func (s *Server) handleAddServer(w http.ResponseWriter, r *http.Request) {
 		DBName:   r.FormValue("dbname"),
 		Username: r.FormValue("username"),
 		Password: r.FormValue("password"),
+		SslMode:  sslMode,
 	}
 
 	// 2. Test PostgreSQL Connection with pgxpool
@@ -81,7 +177,7 @@ func (s *Server) handleAddServer(w http.ResponseWriter, r *http.Request) {
 	mu.Unlock()
 
 	// 4. Persist verified server to SQLite
-	if _, err := s.DB.CreateServer(ctx, sqlc.CreateServerParams{
+	created, err := s.DB.CreateServer(ctx, sqlc.CreateServerParams{
 		UserID:        db.DefaultUserID,
 		ServergroupID: db.DefaultServerGroupID,
 		Name:          cfg.Name,
@@ -89,7 +185,9 @@ func (s *Server) handleAddServer(w http.ResponseWriter, r *http.Request) {
 		Port:          int64(cfg.Port),
 		MaintenanceDb: cfg.DBName,
 		Username:      cfg.Username,
-	}); err != nil {
+		SslMode:       cfg.SslMode,
+	})
+	if err != nil {
 		mu.Lock()
 		delete(serverConfigs, cfg.ID)
 		delete(serverPools, cfg.ID)
@@ -97,6 +195,14 @@ func (s *Server) handleAddServer(w http.ResponseWriter, r *http.Request) {
 		pool.Close()
 		s.renderModalError(w, fmt.Sprintf("Failed to store server: %v", err))
 		return
+	}
+
+	// 4b. Persist the password too (the sqlc-generated CreateServer does not
+	//     cover it). Without it the tree browser cannot reconnect after a
+	//     restart and fails SASL auth with an empty password.
+	if _, err := s.sqliteDB.ExecContext(ctx,
+		`UPDATE server SET password = ? WHERE id = ?`, cfg.Password, created.ID); err != nil {
+		log.Printf("Failed to persist password for server %d: %v", created.ID, err)
 	}
 
 	// 5. Success: the empty 204 body swaps into #modal-container, which closes

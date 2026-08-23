@@ -1,0 +1,17 @@
+<ul class="space-y-1 text-sm pl-2">
+    {{ range .Servers }}
+    <li>
+        <button class="hover:text-blue-400 text-left w-full"
+                hx-get="/api/servers/{{ .ID }}/children"
+                hx-target="#server-{{ .ID }}"
+                hx-swap="innerHTML"
+                hx-on::before-request="if (toggleTreeChildren('server-{{ .ID }}')) event.preventDefault()">
+            🖥️ {{ .Name }}
+            <span class="block text-xs text-gray-500">{{ .Host }}:{{ .Port }} / {{ .MaintenanceDb }}</span>
+        </button>
+        <div id="server-{{ .ID }}" class="ml-4"></div>
+    </li>
+    {{ else }}
+    <li class="text-xs text-gray-500">No servers registered yet.</li>
+    {{ end }}
+</ul>

@@ -7,6 +7,19 @@
     <!-- Load htmx & CSS -->
     <script src="https://unpkg.com/htmx.org@2.0.2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Collapses an expanded tree node. Returns true when the node was
+        // open (caller should cancel the pending htmx request), false when
+        // it should be fetched/expanded.
+        function toggleTreeChildren(containerId) {
+            const el = document.getElementById(containerId);
+            if (el && el.childElementCount > 0) {
+                el.innerHTML = "";
+                return true;
+            }
+            return false;
+        }
+    </script>
 </head>
 <body class="bg-gray-900 text-gray-100 h-screen font-sans antialiased" hx-request='{"credentials": "same-origin"}'>
 

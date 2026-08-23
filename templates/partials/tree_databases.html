@@ -1,0 +1,7 @@
+<ul class="space-y-1 text-sm pl-2">
+    {{ range .Databases }}
+    <li class="hover:text-blue-400 cursor-pointer">🗄️ {{ . }}</li>
+    {{ else }}
+    <li class="text-xs text-gray-500">No databases found.</li>
+    {{ end }}
+</ul>

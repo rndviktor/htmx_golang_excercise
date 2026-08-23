@@ -1,16 +1,13 @@
 <ul class="space-y-1 text-sm pl-2">
-    {{ range .Servers }}
     <li>
         <button class="hover:text-blue-400 text-left w-full"
-                hx-get="/api/servers/{{ .ID }}/databases"
-                hx-target="#server-{{ .ID }}"
-                hx-swap="innerHTML">
-            🗄️ {{ .Name }}
-            <span class="block text-xs text-gray-500">{{ .Host }}:{{ .Port }} / {{ .MaintenanceDb }}</span>
+                hx-get="/api/servers"
+                hx-target="#servers-group"
+                hx-swap="innerHTML"
+                hx-on::before-request="if (toggleTreeChildren('servers-group')) event.preventDefault()">
+            📁 Servers{{ if gt .ServerCount 0 }}
+            <span class="text-xs text-gray-500">({{ .ServerCount }})</span>{{ end }}
         </button>
-        <div id="server-{{ .ID }}" class="ml-4"></div>
+        <div id="servers-group" class="ml-4"></div>
     </li>
-    {{ else }}
-    <li class="text-xs text-gray-500">No servers registered yet.</li>
-    {{ end }}
 </ul>
