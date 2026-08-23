@@ -92,8 +92,8 @@ func clearSessionCookie(w http.ResponseWriter) {
 
 // RequireAuth middleware protects routes.
 // If unauthenticated, it redirects normal requests to /login or sets HX-Redirect for HTMX.
-func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (s *Server) RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
 			s.redirectToLogin(w, r)
@@ -108,8 +108,8 @@ func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Valid session; continue request
-		next(w, r)
-	}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // redirectToLogin handles redirection for standard HTTP requests vs HTMX requests

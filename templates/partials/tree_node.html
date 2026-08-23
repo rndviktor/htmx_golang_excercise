@@ -1,13 +1,16 @@
 <ul class="space-y-1 text-sm pl-2">
-    {{ range .Schemas }}
+    {{ range .Servers }}
     <li>
-        <button class="hover:text-blue-400"
-                hx-get="/api/schemas/{{ . }}/tables"
-                hx-target="#schema-{{ . }}"
+        <button class="hover:text-blue-400 text-left w-full"
+                hx-get="/api/servers/{{ .ID }}/databases"
+                hx-target="#server-{{ .ID }}"
                 hx-swap="innerHTML">
-            📁 {{ . }}
+            🗄️ {{ .Name }}
+            <span class="block text-xs text-gray-500">{{ .Host }}:{{ .Port }} / {{ .MaintenanceDb }}</span>
         </button>
-        <div id="schema-{{ . }}" class="ml-4"></div>
+        <div id="server-{{ .ID }}" class="ml-4"></div>
     </li>
+    {{ else }}
+    <li class="text-xs text-gray-500">No servers registered yet.</li>
     {{ end }}
 </ul>

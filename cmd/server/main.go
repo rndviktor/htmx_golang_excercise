@@ -12,7 +12,10 @@ func main() {
 		log.Fatalf("Failed to initialize templates: %v", err)
 	}
 
-	srv := web.NewServer()
+	srv, err := web.NewServer()
+	if err != nil {
+		log.Fatalf("Failed to initialize server: %v", err)
+	}
 
 	httpServer := &http.Server{
 		Addr:         ":8080",
