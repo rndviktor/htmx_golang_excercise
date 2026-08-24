@@ -1,0 +1,20 @@
+<ul class="space-y-1 text-sm pl-2">
+    {{ range .Nodes }}{{ if .URL }}
+    <li>
+        <button class="hover:text-blue-400 text-left w-full"
+                hx-get="{{ .URL }}"
+                hx-target="#{{ .ID }}"
+                hx-swap="innerHTML"
+                hx-on::before-request="if (toggleTreeChildren('{{ .ID }}')) event.preventDefault()">
+            {{ .Icon }} {{ .Label }}{{ with .Badge }}
+            <span class="text-xs text-gray-500">({{ . }})</span>{{ end }}{{ with .Sub }}
+            <span class="block text-xs text-gray-500">{{ . }}</span>{{ end }}
+        </button>
+        <div id="{{ .ID }}" class="ml-4"></div>
+    </li>
+    {{ else }}
+    <li class="hover:text-blue-400 cursor-pointer">{{ .Icon }} {{ .Label }}</li>
+    {{ end }}{{ else }}
+    <li class="text-xs text-gray-500">{{ $.EmptyMessage }}</li>
+    {{ end }}
+</ul>

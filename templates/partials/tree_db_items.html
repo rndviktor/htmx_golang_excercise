@@ -1,7 +1,0 @@
-<ul class="space-y-1 text-sm pl-2">
-    {{ range .Items }}
-    <li class="hover:text-blue-400 cursor-pointer">{{ $.Icon }} {{ . }}</li>
-    {{ else }}
-    <li class="text-xs text-gray-500">{{ .EmptyMessage }}</li>
-    {{ end }}
-</ul>
