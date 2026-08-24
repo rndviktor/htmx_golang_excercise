@@ -42,11 +42,22 @@ var validSslModes = map[string]bool{"disable": true, "prefer": true, "require": 
 
 // Global/Server-level pool storage map
 var (
-	serverPools   = make(map[string]*pgxpool.Pool)
+	serverPools = make(map[string]*pgxpool.Pool)
+	// serverConfigs holds in-memory configs registered during this session.
 	serverConfigs = make(map[string]ServerConfig)
-	dbPools       = make(map[int64]*pgxpool.Pool)
-	mu            sync.RWMutex
+	// dbPools caches pools for the maintenance DB, keyed by SQLite server row id.
+	dbPools = make(map[int64]*pgxpool.Pool)
+	// dbSpecificPools caches pools connected to an individual database of a
+	// server (database-level tree nodes must query that database's catalogs,
+	// not the server's maintenance DB).
+	dbSpecificPools = make(map[dbPoolKey]*pgxpool.Pool)
+	mu              sync.RWMutex
 )
+
+type dbPoolKey struct {
+	ServerID int64
+	Database string
+}
 
 // getOrCreatePool returns a cached pgx pool for the SQLite server row id,
 // creating it on first use from the stored connection settings. Rows created
@@ -65,6 +76,53 @@ func (s *Server) getOrCreatePool(ctx context.Context, id int64) (*pgxpool.Pool, 
 		return nil, fmt.Errorf("server %d not found", id)
 	}
 
+	pool, err = dialServer(ctx, srv, srv.MaintenanceDb)
+	if err != nil {
+		return nil, err
+	}
+
+	mu.Lock()
+	dbPools[id] = pool
+	mu.Unlock()
+	log.Printf("Connected to server %d (%s:%d/%s)", id, srv.Host, srv.Port, srv.MaintenanceDb)
+
+	return pool, nil
+}
+
+// getOrCreateDbPool returns a cached pgx pool connected to one specific
+// database of a registered server. Used by database-level tree endpoints,
+// whose catalog queries must run against that database itself.
+func (s *Server) getOrCreateDbPool(ctx context.Context, id int64, database string) (*pgxpool.Pool, error) {
+	key := dbPoolKey{ServerID: id, Database: database}
+	mu.RLock()
+	pool, ok := dbSpecificPools[key]
+	mu.RUnlock()
+	if ok {
+		return pool, nil
+	}
+
+	srv, err := s.DB.GetServerByID(ctx, sqlc.GetServerByIDParams{ID: id, UserID: db.DefaultUserID})
+	if err != nil {
+		return nil, fmt.Errorf("server %d not found", id)
+	}
+
+	pool, err = dialServer(ctx, srv, database)
+	if err != nil {
+		return nil, err
+	}
+
+	mu.Lock()
+	dbSpecificPools[key] = pool
+	mu.Unlock()
+	log.Printf("Connected to server %d database %q", id, database)
+
+	return pool, nil
+}
+
+// dialServer opens and pings a new pgx pool to dbname on the given registered
+// server, reusing the stored credentials (or the in-memory fallback for rows
+// created before passwords were persisted).
+func dialServer(ctx context.Context, srv sqlc.Server, dbname string) (*pgxpool.Pool, error) {
 	password := ""
 	if srv.Password.Valid {
 		password = srv.Password.String
@@ -81,7 +139,7 @@ func (s *Server) getOrCreatePool(ctx context.Context, id int64) (*pgxpool.Pool, 
 		Scheme: "postgres",
 		User:   url.UserPassword(srv.Username, password),
 		Host:   net.JoinHostPort(srv.Host, strconv.FormatInt(srv.Port, 10)),
-		Path:   "/" + srv.MaintenanceDb,
+		Path:   "/" + dbname,
 	}
 	q := u.Query()
 	q.Set("sslmode", sslMode)
@@ -91,7 +149,7 @@ func (s *Server) getOrCreatePool(ctx context.Context, id int64) (*pgxpool.Pool, 
 	connectCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 
-	pool, err = pgxpool.New(connectCtx, u.String())
+	pool, err := pgxpool.New(connectCtx, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
@@ -104,11 +162,6 @@ func (s *Server) getOrCreatePool(ctx context.Context, id int64) (*pgxpool.Pool, 
 		}
 		return nil, fmt.Errorf("connection failed: %w", err)
 	}
-
-	mu.Lock()
-	dbPools[id] = pool
-	mu.Unlock()
-	log.Printf("Connected to server %d (%s:%d/%s)", id, srv.Host, srv.Port, srv.MaintenanceDb)
 
 	return pool, nil
 }

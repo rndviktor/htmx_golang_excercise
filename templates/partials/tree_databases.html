@@ -1,6 +1,15 @@
 <ul class="space-y-1 text-sm pl-2">
     {{ range .Databases }}
-    <li class="hover:text-blue-400 cursor-pointer">🗄️ {{ . }}</li>
+    <li>
+        <button class="hover:text-blue-400 text-left w-full"
+                hx-get="/api/servers/{{ $.ServerID }}/databases/{{ . }}/children"
+                hx-target="#database-{{ $.ServerID }}-{{ . }}"
+                hx-swap="innerHTML"
+                hx-on::before-request="if (toggleTreeChildren('database-{{ $.ServerID }}-{{ . }}')) event.preventDefault()">
+            🗄️ {{ . }}
+        </button>
+        <div id="database-{{ $.ServerID }}-{{ . }}" class="ml-4"></div>
+    </li>
     {{ else }}
     <li class="text-xs text-gray-500">No databases found.</li>
     {{ end }}
