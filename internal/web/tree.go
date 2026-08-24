@@ -162,6 +162,29 @@ var schemaCategories = []category{
 			`WHERE n.nspname = $1 AND t.typtype = 'd' ORDER BY 1`},
 }
 
+// tableCategories lists the object folders shown when a table node is
+// expanded. Every Query takes the schema name as $1 and the table name as $2.
+var tableCategories = []category{
+	{Slug: "columns", Label: "Columns", Icon: "📊", Empty: "No columns found.",
+		Query: `SELECT column_name || ' ' || data_type FROM information_schema.columns ` +
+			`WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position`},
+	{Slug: "constraints", Label: "Constraints", Icon: "🔒", Empty: "No constraints found.",
+		Query: `SELECT c.conname || ' (' || CASE c.contype WHEN 'p' THEN 'primary key' WHEN 'f' THEN 'foreign key' ` +
+			`WHEN 'u' THEN 'unique' WHEN 'c' THEN 'check' ELSE c.contype::text END || ')' ` +
+			`FROM pg_constraint c JOIN pg_class t ON c.conrelid = t.oid JOIN pg_namespace n ON t.relnamespace = n.oid ` +
+			`WHERE n.nspname = $1 AND t.relname = $2 ORDER BY 1`},
+	{Slug: "indexes", Label: "Indexes", Icon: "📇", Empty: "No indexes found.",
+		Query: `SELECT indexname FROM pg_indexes WHERE schemaname = $1 AND tablename = $2 ORDER BY 1`},
+	{Slug: "rls-policies", Label: "RLS Policies", Icon: "🛡️", Empty: "No RLS policies found.",
+		Query: `SELECT policyname FROM pg_policies WHERE schemaname = $1 AND tablename = $2 ORDER BY 1`},
+	{Slug: "rules", Label: "Rules", Icon: "📜", Empty: "No rules found.",
+		Query: `SELECT rulename FROM pg_rules WHERE schemaname = $1 AND tablename = $2 ORDER BY 1`},
+	{Slug: "triggers", Label: "Triggers", Icon: "💥", Empty: "No triggers found.",
+		Query: `SELECT tg.tgname FROM pg_trigger tg JOIN pg_class t ON tg.tgrelid = t.oid ` +
+			`JOIN pg_namespace n ON t.relnamespace = n.oid ` +
+			`WHERE n.nspname = $1 AND t.relname = $2 AND NOT tg.tgisinternal ORDER BY 1`},
+}
+
 func findCategory(cats []category, slug string) *category {
 	for i := range cats {
 		if cats[i].Slug == slug {

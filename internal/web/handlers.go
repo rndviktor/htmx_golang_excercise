@@ -48,6 +48,8 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/servers/{serverID}/databases/{dbName}/{category}", s.handleDatabaseCategory)
 		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/children", s.handleSchemaChildren)
 		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/{category}", s.handleSchemaCategory)
+		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/children", s.handleTableChildren)
+		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/{category}", s.handleTableCategory)
 		r.Get("/api/servers/{serverID}/roles", s.handleServerRoles)
 		r.Get("/api/servers/{serverID}/tablespaces", s.handleServerTablespaces)
 	})
@@ -283,13 +285,29 @@ func (s *Server) handleSchemaCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pool, _, _, schemaName, ok := s.loadSchemaPool(w, r)
+	pool, id, dbName, schemaName, ok := s.loadSchemaPool(w, r)
 	if !ok {
 		return
 	}
 
 	names, ok := s.queryNames(w, r, pool, cat.Label, cat.Query, schemaName)
 	if !ok {
+		return
+	}
+
+	// Tables are not leaves either: each one expands into its own object
+	// folders (columns, constraints, indexes, ...).
+	if slug == "tables" {
+		nodes := make([]treeNode, 0, len(names))
+		for _, name := range names {
+			nodes = append(nodes, treeNode{
+				ID:    fmt.Sprintf("table-%d-%s-%s-%s", id, dbName, schemaName, name),
+				Icon:  cat.Icon,
+				Label: name,
+				URL:   fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/tables/%s/children", id, dbName, schemaName, name),
+			})
+		}
+		renderTree(w, nodes, cat.Empty)
 		return
 	}
 
@@ -321,6 +339,64 @@ func (s *Server) loadSchemaPool(w http.ResponseWriter, r *http.Request) (*pgxpoo
 	}
 
 	return pool, id, dbName, schemaName, true
+}
+
+// loadTablePool validates the {serverID}/{dbName}/{schemaName}/{tableName}
+// route params and returns a live pgx pool connected to that database. On
+// failure it writes the error response itself and returns ok=false.
+func (s *Server) loadTablePool(w http.ResponseWriter, r *http.Request) (*pgxpool.Pool, int64, string, string, string, bool) {
+	pool, id, dbName, schemaName, ok := s.loadSchemaPool(w, r)
+	if !ok {
+		return nil, 0, "", "", "", false
+	}
+
+	tableName := chi.URLParam(r, "tableName")
+	if tableName == "" {
+		http.Error(w, "Invalid table name", http.StatusBadRequest)
+		return nil, 0, "", "", "", false
+	}
+
+	return pool, id, dbName, schemaName, tableName, true
+}
+
+// handleTableChildren renders the object folders shown when a table node is
+// expanded in the tree.
+func (s *Server) handleTableChildren(w http.ResponseWriter, r *http.Request) {
+	// The pool is not needed here, but connecting validates the server and
+	// database before the folders are rendered.
+	_, id, dbName, schemaName, tableName, ok := s.loadTablePool(w, r)
+	if !ok {
+		return
+	}
+
+	renderTree(w, categoryFolders(
+		fmt.Sprintf("table-%d-%s-%s-%s", id, dbName, schemaName, tableName),
+		fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/tables/%s", id, dbName, schemaName, tableName),
+		tableCategories,
+	), "")
+}
+
+// handleTableCategory lists the contents of one folder inside a table
+// (columns, constraints, indexes, ...) queried live from that database.
+func (s *Server) handleTableCategory(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "category")
+	cat := findCategory(tableCategories, slug)
+	if cat == nil {
+		http.Error(w, "Unknown table item category", http.StatusNotFound)
+		return
+	}
+
+	pool, _, _, _, _, ok := s.loadTablePool(w, r)
+	if !ok {
+		return
+	}
+
+	names, ok := s.queryNames(w, r, pool, cat.Label, cat.Query, chi.URLParam(r, "schemaName"), chi.URLParam(r, "tableName"))
+	if !ok {
+		return
+	}
+
+	renderTree(w, leaves(cat.Icon, names), cat.Empty)
 }
 
 func (s *Server) handleServerRoles(w http.ResponseWriter, r *http.Request) {
