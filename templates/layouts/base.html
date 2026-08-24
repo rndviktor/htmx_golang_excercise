@@ -19,6 +19,58 @@
             }
             return false;
         }
+
+        // Makes the #sidebar panel resizable by dragging #sidebar-resizer.
+        // Clamped between SIDEBAR_MIN and half the window; the chosen width
+        // is remembered in localStorage. Double-click resets to the default.
+        function initSidebarResize() {
+            const sidebar = document.getElementById("sidebar");
+            const resizer = document.getElementById("sidebar-resizer");
+            if (!sidebar || !resizer) return;
+
+            const MIN_WIDTH = 180;
+            const DEFAULT_WIDTH = 256; // Tailwind w-64
+            let startX = 0, startWidth = 0;
+
+            function setWidth(px) {
+                const max = Math.floor(window.innerWidth / 2);
+                sidebar.style.width =
+                    Math.min(max, Math.max(MIN_WIDTH, px)) + "px";
+            }
+
+            function onMove(e) {
+                setWidth(startWidth + e.clientX - startX);
+            }
+
+            function onUp() {
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+                document.body.classList.remove("select-none");
+                resizer.classList.remove("bg-blue-500");
+                localStorage.setItem(
+                    "sidebar-width",
+                    String(parseInt(sidebar.style.width, 10)));
+            }
+
+            resizer.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                startX = e.clientX;
+                startWidth = sidebar.getBoundingClientRect().width;
+                document.body.classList.add("select-none");
+                resizer.classList.add("bg-blue-500");
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+            });
+
+            resizer.addEventListener("dblclick", () => {
+                localStorage.removeItem("sidebar-width");
+                setWidth(DEFAULT_WIDTH);
+            });
+
+            const saved = parseInt(localStorage.getItem("sidebar-width"), 10);
+            if (!isNaN(saved)) setWidth(saved);
+        }
+        document.addEventListener("DOMContentLoaded", initSidebarResize);
     </script>
 </head>
 <body class="bg-gray-900 text-gray-100 h-screen font-sans antialiased" hx-request='{"credentials": "same-origin"}'>
