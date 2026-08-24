@@ -20,6 +20,7 @@ type treeNode struct {
 	Badge string // optional counter shown next to the label
 	Sub   string // optional secondary line under the label
 	URL   string // htmx GET url for lazy children; empty means leaf node
+	Menu  string // context menu kind for right click (e.g. "table"); empty = none
 }
 
 // expander builds a lazy-loadable tree node whose children are fetched from

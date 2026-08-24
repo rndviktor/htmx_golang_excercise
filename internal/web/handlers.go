@@ -296,15 +296,18 @@ func (s *Server) handleSchemaCategory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Tables are not leaves either: each one expands into its own object
-	// folders (columns, constraints, indexes, ...).
+	// folders (columns, constraints, indexes, ...) and carries a right-click
+	// context menu.
 	if slug == "tables" {
 		nodes := make([]treeNode, 0, len(names))
 		for _, name := range names {
+			tablePath := fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/tables/%s", id, dbName, schemaName, name)
 			nodes = append(nodes, treeNode{
 				ID:    fmt.Sprintf("table-%d-%s-%s-%s", id, dbName, schemaName, name),
 				Icon:  cat.Icon,
 				Label: name,
-				URL:   fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/tables/%s/children", id, dbName, schemaName, name),
+				URL:   tablePath + "/children",
+				Menu:  "table",
 			})
 		}
 		renderTree(w, nodes, cat.Empty)

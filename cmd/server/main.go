@@ -4,6 +4,7 @@ import (
 	"htmx-golang-excercise/internal/web"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -17,14 +18,19 @@ func main() {
 		log.Fatalf("Failed to initialize server: %v", err)
 	}
 
+	addr := os.Getenv("ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+
 	httpServer := &http.Server{
-		Addr:         ":8080",
+		Addr:         addr,
 		Handler:      srv.Routes(),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 
-	log.Println("Server started on http://localhost:8080")
+	log.Printf("Server started on http://localhost%s", addr)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)
 	}
