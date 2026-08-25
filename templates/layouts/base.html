@@ -80,8 +80,11 @@
             const menu = document.getElementById("ctx-menu");
             if (!menu) return;
 
+            let currentTableURL = null;
+
             function hideMenu() {
                 menu.classList.add("hidden");
+                currentTableURL = null;
             }
 
             function menuItem(label, danger) {
@@ -92,8 +95,13 @@
                 return b;
             }
 
-            function openMenu(x, y) {
+            function openMenu(x, y, el) {
                 menu.innerHTML = "";
+                currentTableURL = null;
+
+                const btn = el.querySelector("button[hx-get]");
+                if (btn) currentTableURL = btn.getAttribute("hx-get");
+
                 menu.appendChild(menuItem("Delete", true));
 
                 const divider = document.createElement("div");
@@ -112,7 +120,13 @@
                  "SELECT Script", "UPDATE Script"].forEach(
                     (label) => {
                         const item = menuItem(label, false);
-                        item.addEventListener("click", () => openTab(label));
+                        item.addEventListener("click", () => {
+                            if (label === "SELECT Script" && currentTableURL) {
+                                openSelectTab(currentTableURL);
+                            } else {
+                                openTab(label);
+                            }
+                        });
                         sub.appendChild(item);
                     });
                 row.append(trigger, sub);
@@ -135,7 +149,7 @@
                     return;
                 }
                 e.preventDefault();
-                openMenu(e.clientX, e.clientY);
+                openMenu(e.clientX, e.clientY, el);
             });
             document.addEventListener("click", hideMenu);
             document.addEventListener("keydown", (e) => {
@@ -165,7 +179,84 @@
             });
         }
 
-        function openTab(label) {
+        function executeQuery(btn, page) {
+            const panel = btn.closest("[id^='tab-content']");
+            if (!panel) return;
+            const form = panel.querySelector("#query-editor");
+            const grid = panel.querySelector("#data-grid");
+            const status = panel.querySelector(".query-status");
+            const pag = panel.querySelector(".pagination-controls");
+            const pageInfo = panel.querySelector(".page-info");
+            if (!form || !grid) return;
+
+            const query = form.querySelector("textarea[name='sql_query']").value;
+            const sid = form.querySelector("input[name='server_id']");
+            const db = form.querySelector("input[name='db_name']");
+            if (!sid || !db || !query) return;
+
+            if (!page) page = 1;
+
+            const body = new URLSearchParams({
+                sql_query: query,
+                server_id: sid.value,
+                db_name: db.value,
+                page: String(page),
+                limit: "1000",
+            });
+
+            if (status) status.textContent = "Executing...";
+            fetch("/api/execute-query", { method: "POST", body })
+                .then((r) => {
+                    if (!r.ok) throw r;
+                    return r.text();
+                })
+                .then((html) => {
+                    const tmp = document.createElement("div");
+                    tmp.innerHTML = html;
+                    const result = tmp.querySelector(".query-result");
+
+                    if (grid && result) grid.innerHTML = result.innerHTML;
+
+                    const total = parseInt(result.dataset.total) || 0;
+                    const totalPages = parseInt(result.dataset.totalPages) || 1;
+                    const curPage = parseInt(result.dataset.page) || 1;
+                    const rows = grid ? grid.querySelectorAll("tbody tr").length : 0;
+
+                    if (status) status.textContent = total + " row" + (total !== 1 ? "s" : "") + " (" + rows + " on page)";
+
+                    if (totalPages > 1) {
+                        pag.classList.remove("hidden");
+                        pageInfo.textContent = "Page " + curPage + " of " + totalPages;
+                        pag.dataset.page = curPage;
+                        pag.dataset.totalPages = totalPages;
+                    } else {
+                        pag.classList.add("hidden");
+                    }
+                })
+                .catch(async (r) => {
+                    const msg = r.body ? await r.text() : "Request failed";
+                    grid.innerHTML = '<div class="p-4 text-red-400 text-sm">' + msg + '</div>';
+                    if (status) status.textContent = "Error";
+                    if (pag) pag.classList.add("hidden");
+                });
+        }
+
+        function goToPage(btn, action) {
+            const panel = btn.closest("[id^='tab-content']");
+            const pag = panel.querySelector(".pagination-controls");
+            let page = parseInt(pag.dataset.page) || 1;
+            const totalPages = parseInt(pag.dataset.totalPages) || 1;
+
+            if (action === "prev") page = Math.max(1, page - 1);
+            else if (action === "next") page = Math.min(totalPages, page + 1);
+            else if (action === "last") page = totalPages;
+            else if (typeof action === "number") page = action;
+
+            const execBtn = panel.querySelector("button[onclick='executeQuery(this)']");
+            if (execBtn) executeQuery(execBtn, page);
+        }
+
+        function openTab(label, query, serverID, dbName) {
             const id = "tab-" + (++tabCounter);
 
             // Create tab button
@@ -180,14 +271,59 @@
             });
             document.getElementById("tab-bar").appendChild(btn);
 
-            // Create empty content panel
+            // Create content panel and fetch its content from the server
             const panel = document.createElement("div");
             panel.id = "tab-content-" + id;
-            panel.className = "tab-panel h-full overflow-y-auto p-6 bg-gray-900 text-gray-200";
+            panel.className = "tab-panel flex-1 flex flex-col overflow-hidden bg-gray-900 text-gray-200";
             panel.style.display = "none";
             document.getElementById("tab-contents").appendChild(panel);
 
+            fetch("/api/tabs/script-panel")
+                .then((r) => r.text())
+                .then((html) => {
+                    panel.innerHTML = html;
+
+                    if (query) {
+                        const editor = panel.querySelector("textarea[name='sql_query']");
+                        if (editor) editor.value = query;
+                    }
+                    if (serverID && dbName) {
+                        const form = panel.querySelector("#query-editor");
+                        if (form) {
+                            const sid = document.createElement("input");
+                            sid.type = "hidden"; sid.name = "server_id"; sid.value = serverID;
+                            form.appendChild(sid);
+                            const db = document.createElement("input");
+                            db.type = "hidden"; db.name = "db_name"; db.value = dbName;
+                            form.appendChild(db);
+                        }
+                    }
+
+                    // F5 keyboard shortcut
+                    const textarea = panel.querySelector("textarea[name='sql_query']");
+                    const execBtn = panel.querySelector("button[onclick='executeQuery(this)']");
+                    if (textarea && execBtn) {
+                        textarea.addEventListener("keydown", (e) => {
+                            if (e.key === "F5") { e.preventDefault(); execBtn.click(); }
+                        });
+                    }
+                });
+
             switchTab(id);
+        }
+
+        function openSelectTab(tableURL) {
+            const baseURL = tableURL.replace(/\/children$/, "");
+            const parts = baseURL.split("/");
+            const tableName = parts.pop();
+            // URL: /api/servers/{id}/databases/{db}/schemas/{schema}/tables/{table}
+            const serverID = parts[3];
+            const dbName = parts[5];
+            fetch(baseURL + "/columns")
+                .then((r) => r.json())
+                .then((data) => {
+                    openTab("SELECT " + tableName, data.query, serverID, dbName);
+                });
         }
 
         function closeTab(id, e) {

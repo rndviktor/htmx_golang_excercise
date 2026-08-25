@@ -1,0 +1,71 @@
+<div class="flex flex-col h-full bg-gray-900 text-gray-200">
+
+  <!-- Main Toolbar -->
+  <div class="flex items-center gap-2 px-2 py-1.5 bg-gray-800 border-b border-gray-700">
+    <button
+      onclick="executeQuery(this)"
+      title="Execute Query (F5)"
+      class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
+      &#9654;
+    </button>
+    <button title="Stop"
+      class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
+      &#9724;
+    </button>
+  </div>
+
+  <!-- Top Pane: Query Editor & Scratch Pad Split View -->
+  <div class="flex" style="height: 300px;">
+
+    <!-- Left Editor Pane -->
+    <div class="flex flex-col flex-1 border-r border-gray-700">
+      <div class="flex items-center px-2 py-1 text-xs bg-gray-800 border-b border-gray-700 text-gray-400">
+        <strong class="text-gray-200">Query</strong><span class="mx-1">|</span>Query History
+      </div>
+      <form id="query-editor" class="flex-1 m-0" onsubmit="return false;">
+        <textarea
+          name="sql_query"
+          class="w-full h-full border-none outline-none font-mono text-sm p-2 box-border bg-gray-900 text-gray-200 placeholder-gray-500"
+          placeholder="Enter SQL here..."></textarea>
+      </form>
+    </div>
+
+    <!-- Right Scratch Pad Pane -->
+    <div class="flex flex-col flex-1">
+      <div class="flex items-center justify-between px-2 py-1 text-xs bg-gray-800 border-b border-gray-700 text-gray-400">
+        <span>Scratch Pad</span>
+        <span class="cursor-pointer hover:text-gray-200">&#10005;</span>
+      </div>
+      <textarea class="flex-1 border-none outline-none p-2 resize-none box-border bg-gray-900 text-gray-200 placeholder-gray-500"></textarea>
+    </div>
+  </div>
+
+  <!-- Bottom Pane: Output Panel -->
+  <div class="flex-1 flex flex-col min-h-0">
+
+    <!-- Tab Navigation -->
+    <div class="flex text-xs bg-gray-800 border-b border-gray-700">
+      <div class="px-3 py-1.5 bg-gray-900 border-t-2 border-blue-500 text-blue-400 font-bold border-r border-gray-700">
+        Data Output
+      </div>
+      <div class="px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 border-r border-gray-700">Messages</div>
+      <div class="px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200">Notifications</div>
+    </div>
+
+    <!-- Data Grid Table -->
+    <div id="data-grid" class="flex-1 overflow-auto"></div>
+  </div>
+
+  <!-- Status Bar (pinned to bottom) -->
+  <div class="flex items-center justify-between px-2 py-1 text-[11px] bg-gray-800 border-t border-gray-600 text-gray-300 shrink-0">
+    <div class="query-status">Ready</div>
+    <div class="pagination-controls hidden flex items-center gap-2">
+      <button onclick="goToPage(this, 1)" class="px-1 hover:text-white hover:bg-gray-600 rounded" title="First page">|&lt;</button>
+      <button onclick="goToPage(this, 'prev')" class="px-1 hover:text-white hover:bg-gray-600 rounded" title="Previous page">&lt;</button>
+      <span class="page-info text-gray-200">Page 1 of 1</span>
+      <button onclick="goToPage(this, 'next')" class="px-1 hover:text-white hover:bg-gray-600 rounded" title="Next page">&gt;</button>
+      <button onclick="goToPage(this, 'last')" class="px-1 hover:text-white hover:bg-gray-600 rounded" title="Last page">&gt;|</button>
+    </div>
+  </div>
+
+</div>

@@ -2,10 +2,12 @@ package web
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,6 +43,9 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/tree", s.handleTree)
 		r.Get("/api/servers", s.handleServerList)
 		r.Get("/api/servers/new", s.handleNewServerModal)
+		r.Get("/api/tabs/script-panel", s.handleScriptTabPanel)
+		r.Post("/api/execute-query", s.handleExecuteQuery)
+		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/columns", s.handleTableColumns)
 		r.Post("/api/servers", s.handleAddServer)
 		r.Get("/api/servers/{serverID}/children", s.handleServerChildren)
 		r.Get("/api/servers/{serverID}/databases", s.handleServerDatabases)
@@ -432,4 +437,155 @@ func (s *Server) handleServerTablespaces(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleNewServerModal(w http.ResponseWriter, r *http.Request) {
 	RenderPartial(w, "add_server_modal.html", nil)
+}
+
+func (s *Server) handleScriptTabPanel(w http.ResponseWriter, r *http.Request) {
+	RenderPartial(w, "script_tab_panel.html", nil)
+}
+
+func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	query := r.FormValue("sql_query")
+	serverIDStr := r.FormValue("server_id")
+	dbName := r.FormValue("db_name")
+
+	if query == "" || serverIDStr == "" || dbName == "" {
+		http.Error(w, "Missing query, server_id, or db_name", http.StatusBadRequest)
+		return
+	}
+
+	serverID, err := strconv.ParseInt(serverIDStr, 10, 64)
+	if err != nil || serverID < 1 {
+		http.Error(w, "Invalid server id", http.StatusBadRequest)
+		return
+	}
+
+	page, _ := strconv.Atoi(r.FormValue("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(r.FormValue("limit"))
+	if limit < 1 {
+		limit = 1000
+	}
+	offset := (page - 1) * limit
+
+	query = strings.TrimRight(query, " \t\n\r;")
+
+	pool, err := s.getOrCreateDbPool(r.Context(), serverID, dbName)
+	if err != nil {
+		http.Error(w, "Cannot connect to database: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	// Count total rows
+	var total int
+	err = pool.QueryRow(r.Context(),
+		"SELECT COUNT(*) FROM ("+query+") _cnt").Scan(&total)
+	if err != nil {
+		http.Error(w, "Count query failed: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Fetch paginated rows
+	rows, err := pool.Query(r.Context(),
+		"SELECT * FROM ("+query+") _q LIMIT $1 OFFSET $2", limit, offset)
+	if err != nil {
+		http.Error(w, "Query failed: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer rows.Close()
+
+	fieldDescriptions := rows.FieldDescriptions()
+	colCount := len(fieldDescriptions)
+
+	var headers []string
+	for _, fd := range fieldDescriptions {
+		headers = append(headers, fd.Name)
+	}
+
+	var rowsData [][]string
+	for rows.Next() {
+		vals := make([]any, colCount)
+		valPtrs := make([]any, colCount)
+		for i := range vals {
+			valPtrs[i] = &vals[i]
+		}
+		if err := rows.Scan(valPtrs...); err != nil {
+			http.Error(w, "Row scan error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		row := make([]string, colCount)
+		for i, v := range vals {
+			if v == nil {
+				row[i] = "NULL"
+			} else {
+				row[i] = fmt.Sprintf("%v", v)
+			}
+		}
+		rowsData = append(rowsData, row)
+	}
+
+	totalPages := (total + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	fmt.Fprintf(w, `<div data-page="%d" data-total="%d" data-total-pages="%d" data-limit="%d" class="query-result">`, page, total, totalPages, limit)
+	fmt.Fprintf(w, `<table class="w-full border-collapse text-xs text-left">`)
+	fmt.Fprintf(w, `<thead class="bg-gray-800 text-gray-400 sticky top-0 z-10">`)
+	fmt.Fprintf(w, `<tr><th class="px-2 py-1 border border-gray-700 border-b border-gray-600"></th>`)
+	for _, h := range headers {
+		fmt.Fprintf(w, `<th class="px-2 py-1 border border-gray-700 border-b border-gray-600 font-bold">%s</th>`, h)
+	}
+	fmt.Fprintf(w, `</tr></thead><tbody>`)
+	rowNum := offset + 1
+	for _, row := range rowsData {
+		fmt.Fprintf(w, `<tr class="hover:bg-gray-800/50">`)
+		fmt.Fprintf(w, `<td class="px-2 py-1 border border-gray-700 bg-gray-800/30 text-center text-gray-500">%d</td>`, rowNum)
+		rowNum++
+		for _, val := range row {
+			fmt.Fprintf(w, `<td class="px-2 py-1 border border-gray-700">%s</td>`, val)
+		}
+		fmt.Fprintf(w, `</tr>`)
+	}
+	fmt.Fprintf(w, `</tbody></table></div>`)
+}
+
+func (s *Server) handleTableColumns(w http.ResponseWriter, r *http.Request) {
+	pool, _, _, schemaName, tableName, ok := s.loadTablePool(w, r)
+	if !ok {
+		return
+	}
+
+	rows, err := pool.Query(r.Context(),
+		`SELECT column_name FROM information_schema.columns
+		 WHERE table_schema = $1 AND table_name = $2
+		 ORDER BY ordinal_position`, schemaName, tableName)
+	if err != nil {
+		http.Error(w, "Failed to query columns", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var cols []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			http.Error(w, "Failed to scan column", http.StatusInternalServerError)
+			return
+		}
+		cols = append(cols, name)
+	}
+
+	query := "SELECT " + strings.Join(cols, ", ") + "\nFROM " + tableName + ";"
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"query": query})
 }

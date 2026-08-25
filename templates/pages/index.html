@@ -1,9 +1,9 @@
 {{ template "base.html" . }}
 
 {{ define "main_content" }}
-<div class="flex h-full bg-gray-900">
+<div class="flex flex-1 min-h-0 bg-gray-900">
     <!-- Sidebar Navigation -->
-    <aside id="sidebar" class="w-64 shrink-0 bg-gray-800 border-r border-gray-700 flex flex-col">
+    <aside id="sidebar" class="shrink-0 bg-gray-800 border-r border-gray-700 flex flex-col" style="width: 256px;">
         <!-- Tree Navigation -->
         <div class="flex-1 overflow-y-auto p-4" id="tree-root" hx-get="/api/tree" hx-trigger="load, server-added from:body">
             <span class="text-sm text-gray-500">Select a server to load schema...</span>
@@ -29,11 +29,13 @@
         </div>
 
         <!-- Tab Content Panels -->
-        <div id="tab-contents" class="flex-1 overflow-hidden">
+        <div id="tab-contents" class="flex-1 flex flex-col overflow-hidden">
 
             <!-- Dashboard Panel -->
-            <div id="tab-content-dashboard" class="tab-panel h-full overflow-y-auto p-6 bg-gray-900 text-gray-200">
+            <div id="tab-content-dashboard" class="tab-panel flex-1 flex flex-col overflow-hidden bg-gray-900 text-gray-200">
+                <div class="flex-1 overflow-y-auto p-6">
                 {{ template "dashboard_panel.html" . }}
+                </div>
             </div>
 
         </div>
