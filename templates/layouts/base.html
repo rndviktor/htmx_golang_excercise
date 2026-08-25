@@ -110,7 +110,11 @@
                 sub.className = "absolute left-full top-0 hidden group-hover:block bg-gray-800 border border-gray-600 rounded shadow-xl py-1 min-w-[12rem]";
                 ["CREATE Script", "DELETE Script", "INSERT Script",
                  "SELECT Script", "UPDATE Script"].forEach(
-                    (label) => sub.appendChild(menuItem(label, false)));
+                    (label) => {
+                        const item = menuItem(label, false);
+                        item.addEventListener("click", () => openTab(label));
+                        sub.appendChild(item);
+                    });
                 row.append(trigger, sub);
                 menu.appendChild(row);
 
@@ -140,6 +144,66 @@
             window.addEventListener("blur", hideMenu);
         }
         document.addEventListener("DOMContentLoaded", initContextMenu);
+
+        // -----------------------------------------------------------------------------
+        // Tab management – open / switch / close tabs dynamically.
+        // -----------------------------------------------------------------------------
+        let tabCounter = 0;
+
+        function switchTab(id) {
+            document.querySelectorAll(".tab-btn").forEach((btn) => {
+                const isActive = btn.dataset.tabId === id;
+                btn.classList.toggle("bg-gray-900", isActive);
+                btn.classList.toggle("text-blue-400", isActive);
+                btn.classList.toggle("border-t-2", isActive);
+                btn.classList.toggle("border-blue-500", isActive);
+                btn.classList.toggle("text-gray-400", !isActive);
+                btn.classList.toggle("hover:text-gray-200", !isActive);
+            });
+            document.querySelectorAll(".tab-panel").forEach((panel) => {
+                panel.style.display = panel.id === "tab-content-" + id ? "" : "none";
+            });
+        }
+
+        function openTab(label) {
+            const id = "tab-" + (++tabCounter);
+
+            // Create tab button
+            const btn = document.createElement("button");
+            btn.className = "tab-btn flex items-center space-x-2 px-4 py-2 font-medium rounded-t text-gray-400 hover:text-gray-200";
+            btn.dataset.tabId = id;
+            btn.innerHTML = '<span>' + label + '</span>' +
+                '<span class="text-xs text-gray-500 hover:text-gray-300" onclick="closeTab(\'' + id + '\', event)">✕</span>';
+            btn.addEventListener("click", (e) => {
+                if (e.target.textContent === "✕") return;
+                switchTab(id);
+            });
+            document.getElementById("tab-bar").appendChild(btn);
+
+            // Create empty content panel
+            const panel = document.createElement("div");
+            panel.id = "tab-content-" + id;
+            panel.className = "tab-panel h-full overflow-y-auto p-6 bg-gray-900 text-gray-200";
+            panel.style.display = "none";
+            document.getElementById("tab-contents").appendChild(panel);
+
+            switchTab(id);
+        }
+
+        function closeTab(id, e) {
+            if (e) e.stopPropagation();
+            const btn = document.querySelector('.tab-btn[data-tab-id="' + id + '"]');
+            const panel = document.getElementById("tab-content-" + id);
+            if (btn) btn.remove();
+            if (panel) panel.remove();
+
+            // Switch to the last remaining tab (Dashboard is always first)
+            const remaining = document.querySelectorAll(".tab-btn");
+            if (remaining.length > 0) {
+                const last = remaining[remaining.length - 1];
+                switchTab(last.dataset.tabId);
+            }
+        }
     </script>
 </head>
 <body class="bg-gray-900 text-gray-100 h-screen font-sans antialiased" hx-request='{"credentials": "same-origin"}'>
