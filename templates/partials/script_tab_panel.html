@@ -45,15 +45,29 @@
 
     <!-- Tab Navigation -->
     <div class="flex text-xs bg-gray-800 border-b border-gray-700">
-      <div class="px-3 py-1.5 bg-gray-900 border-t-2 border-blue-500 text-blue-400 font-bold border-r border-gray-700">
+      <div class="output-tab px-3 py-1.5 cursor-pointer border-r border-gray-700 text-blue-400 hover:text-gray-200 border-t-2 border-t-blue-500 font-bold" data-output-tab="data" onclick="switchOutputTab(this)">
         Data Output
       </div>
-      <div class="px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 border-r border-gray-700">Messages</div>
-      <div class="px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200">Notifications</div>
+      <div class="output-tab px-3 py-1.5 cursor-pointer border-r border-gray-700 text-gray-400 hover:text-gray-200 border-t-2 border-t-transparent font-normal" data-output-tab="messages" onclick="switchOutputTab(this)">
+        Messages
+      </div>
+      <div class="output-tab px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 border-t-2 border-t-transparent font-normal" data-output-tab="notifications" onclick="switchOutputTab(this)">
+        Notifications
+      </div>
     </div>
 
-    <!-- Data Grid Table -->
-    <div id="data-grid" class="flex-1 overflow-auto"></div>
+    <!-- Data Output Panel -->
+    <div id="data-grid" class="output-panel flex-1 overflow-auto"></div>
+
+    <!-- Messages Panel -->
+    <div id="messages-panel" class="output-panel flex-1 overflow-auto hidden">
+      <div class="p-3 text-xs font-mono text-gray-400"></div>
+    </div>
+
+    <!-- Notifications Panel -->
+    <div id="notifications-panel" class="output-panel flex-1 overflow-auto hidden">
+      <div class="p-3 text-xs text-gray-500 italic">No notifications.</div>
+    </div>
   </div>
 
   <!-- Status Bar (pinned to bottom) -->

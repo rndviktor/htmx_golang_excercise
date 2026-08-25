@@ -179,6 +179,41 @@
             });
         }
 
+        function switchOutputTab(tab) {
+            const panel = tab.closest("[id^='tab-content']");
+            if (!panel) return;
+            const name = tab.dataset.outputTab;
+
+            panel.querySelectorAll(".output-tab").forEach((t) => {
+                const active = t.dataset.outputTab === name;
+                t.classList.toggle("text-blue-400", active);
+                t.classList.toggle("font-bold", active);
+                t.classList.toggle("border-t-blue-500", active);
+                t.classList.toggle("text-gray-400", !active);
+                t.classList.toggle("font-normal", !active);
+                t.classList.toggle("border-t-transparent", !active);
+            });
+            panel.querySelectorAll(".output-panel").forEach((p) => {
+                p.classList.toggle("hidden", p.id !== name + "-panel" && p.id !== "data-grid");
+            });
+            if (name === "data") {
+                const dg = panel.querySelector("#data-grid");
+                if (dg) dg.classList.remove("hidden");
+            }
+        }
+
+        function logMessage(panel, type, text) {
+            const box = panel.querySelector("#messages-panel > div");
+            if (!box) return;
+            const ts = new Date().toLocaleTimeString();
+            const colors = { info: "text-gray-300", success: "text-green-400", error: "text-red-400", warn: "text-yellow-400" };
+            const line = document.createElement("div");
+            line.className = "py-0.5 " + (colors[type] || "text-gray-300");
+            line.textContent = "[" + ts + "] " + text;
+            box.appendChild(line);
+            box.parentElement.scrollTop = box.parentElement.scrollHeight;
+        }
+
         function executeQuery(btn, page) {
             const panel = btn.closest("[id^='tab-content']");
             if (!panel) return;
@@ -204,6 +239,7 @@
                 limit: "1000",
             });
 
+            const t0 = performance.now();
             if (status) status.textContent = "Executing...";
             fetch("/api/execute-query", { method: "POST", body })
                 .then((r) => {
@@ -211,6 +247,7 @@
                     return r.text();
                 })
                 .then((html) => {
+                    const elapsed = ((performance.now() - t0) / 1000).toFixed(3);
                     const tmp = document.createElement("div");
                     tmp.innerHTML = html;
                     const result = tmp.querySelector(".query-result");
@@ -222,7 +259,10 @@
                     const curPage = parseInt(result.dataset.page) || 1;
                     const rows = grid ? grid.querySelectorAll("tbody tr").length : 0;
 
-                    if (status) status.textContent = total + " row" + (total !== 1 ? "s" : "") + " (" + rows + " on page)";
+                    if (status) status.textContent = total + " row" + (total !== 1 ? "s" : "") + " (" + rows + " on page) — " + elapsed + "s";
+
+                    logMessage(panel, "info", "Query executed in " + elapsed + "s");
+                    logMessage(panel, "success", total + " row" + (total !== 1 ? "s" : "") + " returned");
 
                     if (totalPages > 1) {
                         pag.classList.remove("hidden");
@@ -234,10 +274,16 @@
                     }
                 })
                 .catch(async (r) => {
+                    const elapsed = ((performance.now() - t0) / 1000).toFixed(3);
                     const msg = r.body ? await r.text() : "Request failed";
                     grid.innerHTML = '<div class="p-4 text-red-400 text-sm">' + msg + '</div>';
-                    if (status) status.textContent = "Error";
+                    if (status) status.textContent = "Error — " + elapsed + "s";
                     if (pag) pag.classList.add("hidden");
+
+                    logMessage(panel, "error", "Query failed after " + elapsed + "s: " + msg);
+
+                    const msgTab = panel.querySelector('[data-output-tab="messages"]');
+                    if (msgTab) switchOutputTab(msgTab);
                 });
         }
 
