@@ -17,6 +17,10 @@ var templates TemplateCache
 func InitTemplates() error {
 	cache := make(TemplateCache)
 
+	funcMap := template.FuncMap{
+		"add": func(a, b int) int { return a + b },
+	}
+
 	pages, err := fs.Glob(htmxgolangexcercise.Files, "templates/pages/*.html")
 	if err != nil {
 		return err
@@ -25,7 +29,7 @@ func InitTemplates() error {
 	for _, page := range pages {
 		name := filepath.Base(page)
 
-		templ, err := template.New(name).ParseFS(
+		templ, err := template.New(name).Funcs(funcMap).ParseFS(
 			htmxgolangexcercise.Files,
 			"templates/layouts/*.html",
 			"templates/partials/*.html",
@@ -47,7 +51,7 @@ func InitTemplates() error {
 	for _, partial := range partials {
 		name := filepath.Base(partial)
 
-		tmpl, err := template.New(name).ParseFS(htmxgolangexcercise.Files, partial)
+		tmpl, err := template.New(name).Funcs(funcMap).ParseFS(htmxgolangexcercise.Files, partial)
 		if err != nil {
 			return fmt.Errorf("error parsing partial %s: %w", name, err)
 		}

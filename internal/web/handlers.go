@@ -535,27 +535,15 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		totalPages = 1
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	fmt.Fprintf(w, `<div data-page="%d" data-total="%d" data-total-pages="%d" data-limit="%d" class="query-result">`, page, total, totalPages, limit)
-	fmt.Fprintf(w, `<table class="w-full border-collapse text-xs text-left">`)
-	fmt.Fprintf(w, `<thead class="bg-gray-800 text-gray-400 sticky top-0 z-10">`)
-	fmt.Fprintf(w, `<tr><th class="px-2 py-1 border border-gray-700 border-b border-gray-600"></th>`)
-	for _, h := range headers {
-		fmt.Fprintf(w, `<th class="px-2 py-1 border border-gray-700 border-b border-gray-600 font-bold">%s</th>`, h)
-	}
-	fmt.Fprintf(w, `</tr></thead><tbody>`)
-	rowNum := offset + 1
-	for _, row := range rowsData {
-		fmt.Fprintf(w, `<tr class="hover:bg-gray-800/50">`)
-		fmt.Fprintf(w, `<td class="px-2 py-1 border border-gray-700 bg-gray-800/30 text-center text-gray-500">%d</td>`, rowNum)
-		rowNum++
-		for _, val := range row {
-			fmt.Fprintf(w, `<td class="px-2 py-1 border border-gray-700">%s</td>`, val)
-		}
-		fmt.Fprintf(w, `</tr>`)
-	}
-	fmt.Fprintf(w, `</tbody></table></div>`)
+	RenderPartial(w, "query_result.html", map[string]any{
+		"Headers":    headers,
+		"Rows":       rowsData,
+		"Page":       page,
+		"Total":      total,
+		"TotalPages": totalPages,
+		"Limit":      limit,
+		"Offset":     offset,
+	})
 }
 
 func (s *Server) handleTableColumns(w http.ResponseWriter, r *http.Request) {
