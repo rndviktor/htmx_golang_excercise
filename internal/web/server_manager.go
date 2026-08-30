@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"htmx-golang-excercise/internal/db"
-	sqlc "htmx-golang-excercise/internal/sqlc/db"
+	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
 
 type ServerConfig struct {
@@ -71,7 +71,7 @@ func (s *Server) getOrCreatePool(ctx context.Context, id int64) (*pgxpool.Pool, 
 		return pool, nil
 	}
 
-	srv, err := s.DB.GetServerByID(ctx, sqlc.GetServerByIDParams{ID: id, UserID: db.DefaultUserID})
+	srv, err := s.DB.GetServerByID(ctx, sqlite.GetServerByIDParams{ID: id, UserID: db.DefaultUserID})
 	if err != nil {
 		return nil, fmt.Errorf("server %d not found", id)
 	}
@@ -101,7 +101,7 @@ func (s *Server) getOrCreateDbPool(ctx context.Context, id int64, database strin
 		return pool, nil
 	}
 
-	srv, err := s.DB.GetServerByID(ctx, sqlc.GetServerByIDParams{ID: id, UserID: db.DefaultUserID})
+	srv, err := s.DB.GetServerByID(ctx, sqlite.GetServerByIDParams{ID: id, UserID: db.DefaultUserID})
 	if err != nil {
 		return nil, fmt.Errorf("server %d not found", id)
 	}
@@ -122,7 +122,7 @@ func (s *Server) getOrCreateDbPool(ctx context.Context, id int64, database strin
 // dialServer opens and pings a new pgx pool to dbname on the given registered
 // server, reusing the stored credentials (or the in-memory fallback for rows
 // created before passwords were persisted).
-func dialServer(ctx context.Context, srv sqlc.Server, dbname string) (*pgxpool.Pool, error) {
+func dialServer(ctx context.Context, srv sqlite.Server, dbname string) (*pgxpool.Pool, error) {
 	password := ""
 	if srv.Password.Valid {
 		password = srv.Password.String
@@ -230,7 +230,7 @@ func (s *Server) handleAddServer(w http.ResponseWriter, r *http.Request) {
 	mu.Unlock()
 
 	// 4. Persist verified server to SQLite
-	created, err := s.DB.CreateServer(ctx, sqlc.CreateServerParams{
+	created, err := s.DB.CreateServer(ctx, sqlite.CreateServerParams{
 		UserID:        db.DefaultUserID,
 		ServergroupID: db.DefaultServerGroupID,
 		Name:          cfg.Name,

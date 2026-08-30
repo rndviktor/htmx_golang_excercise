@@ -1,20 +1,17 @@
 // Package db owns the SQLite database: connection, schema migration and
 // default seed data. All queries are executed via the sqlc-generated
-// package internal/sqlc/db.
+// package internal/sqlc/sqlite/db.
 package db
 
 import (
 	"database/sql"
-	_ "embed"
 	"fmt"
 
 	_ "modernc.org/sqlite"
 
-	sqlc "htmx-golang-excercise/internal/sqlc/db"
+	sqlcemb "htmx-golang-excercise/internal/sqlc/sqlite"
+	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
-
-//go:embed schema.sql
-var schema string
 
 // IDs of the seed rows created by Open. Used by callers that don't yet
 // have real multi-user support.
@@ -26,7 +23,7 @@ const (
 // Open opens (creating if needed) the SQLite database at path, applies the
 // schema, seeds the default user/server group, and returns a handle plus
 // sqlc queries bound to it.
-func Open(path string) (*sql.DB, *sqlc.Queries, error) {
+func Open(path string) (*sql.DB, *sqlite.Queries, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)", path)
 	database, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -41,7 +38,7 @@ func Open(path string) (*sql.DB, *sqlc.Queries, error) {
 		return nil, nil, err
 	}
 
-	if _, err := database.Exec(schema); err != nil {
+	if _, err := database.Exec(sqlcemb.Schema); err != nil {
 		database.Close()
 		return nil, nil, fmt.Errorf("apply schema: %w", err)
 	}
@@ -51,7 +48,7 @@ func Open(path string) (*sql.DB, *sqlc.Queries, error) {
 		return nil, nil, fmt.Errorf("seed defaults: %w", err)
 	}
 
-	return database, sqlc.New(database), nil
+	return database, sqlite.New(database), nil
 }
 
 // seedDefaults creates the demo admin user and its "Servers" group used

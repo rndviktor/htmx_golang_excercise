@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"htmx-golang-excercise/internal/db"
-	sqlc "htmx-golang-excercise/internal/sqlc/db"
+	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
 
 // treeNode is one row of the object explorer tree. Nodes with a URL are
@@ -64,7 +64,7 @@ func renderTree(w http.ResponseWriter, nodes []treeNode, emptyMessage string) {
 
 // listServers fetches the registered servers of the default user group.
 // On failure it writes the error response itself and returns ok=false.
-func (s *Server) listServers(w http.ResponseWriter, r *http.Request) ([]sqlc.ListServersByGroupRow, bool) {
+func (s *Server) listServers(w http.ResponseWriter, r *http.Request) ([]sqlite.ListServersByGroupRow, bool) {
 	servers, err := s.DB.ListServersByGroup(r.Context(), db.DefaultUserID)
 	if err != nil {
 		log.Printf("Failed to list servers: %v", err)

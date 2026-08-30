@@ -13,11 +13,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"htmx-golang-excercise/internal/db"
-	sqlc "htmx-golang-excercise/internal/sqlc/db"
+	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
 
 type Server struct {
-	DB       *sqlc.Queries
+	DB       *sqlite.Queries
 	sqliteDB *sql.DB
 }
 
@@ -122,7 +122,7 @@ func (s *Server) handleServerChildren(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.DB.GetServerByID(r.Context(), sqlc.GetServerByIDParams{
+	if _, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
 		ID:     id,
 		UserID: db.DefaultUserID,
 	}); err != nil {
