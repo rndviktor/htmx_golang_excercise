@@ -247,11 +247,10 @@
                     return r.text();
                 })
                 .then((html) => {
-                    const elapsed = ((performance.now() - t0) / 1000).toFixed(3);
                     const tmp = document.createElement("div");
                     tmp.innerHTML = html;
                     const result = tmp.querySelector(".query-result");
-
+                    const elapsed = result.dataset.elapsed || "0";
                     if (grid && result) grid.innerHTML = result.innerHTML;
 
                     const total = parseInt(result.dataset.total) || 0;

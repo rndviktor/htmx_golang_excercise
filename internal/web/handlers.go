@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -482,6 +483,8 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
+
 	// Count total rows
 	var total int
 	err = pool.QueryRow(r.Context(),
@@ -530,6 +533,8 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		rowsData = append(rowsData, row)
 	}
 
+	elapsed := time.Since(start).Seconds()
+
 	totalPages := (total + limit - 1) / limit
 	if totalPages < 1 {
 		totalPages = 1
@@ -543,6 +548,7 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		"TotalPages": totalPages,
 		"Limit":      limit,
 		"Offset":     offset,
+		"Elapsed":    elapsed,
 	})
 }
 
