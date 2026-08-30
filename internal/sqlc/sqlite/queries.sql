@@ -24,3 +24,29 @@ INSERT INTO server (
     ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING *;
+
+-- name: GetUserWorkspace :one
+SELECT * FROM user_workspaces
+WHERE user_id = ?
+LIMIT 1;
+
+-- name: SaveUserWorkspace :exec
+INSERT INTO user_workspaces (user_id, active_tab_id, layout_metadata, updated_at)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(user_id) DO UPDATE SET
+    active_tab_id = excluded.active_tab_id,
+    layout_metadata = excluded.layout_metadata,
+    updated_at = CURRENT_TIMESTAMP;
+
+-- name: ListWorkspaceTabs :many
+SELECT * FROM workspace_tabs
+WHERE user_id = ?
+ORDER BY tab_order, created_at;
+
+-- name: ReplaceWorkspaceTabs :exec
+DELETE FROM workspace_tabs
+WHERE user_id = ?;
+
+-- name: InsertWorkspaceTab :exec
+INSERT INTO workspace_tabs (id, user_id, title, connection_id, query_text, tab_order, created_at)
+VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);

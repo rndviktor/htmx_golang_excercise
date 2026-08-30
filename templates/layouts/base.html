@@ -50,6 +50,7 @@
                 localStorage.setItem(
                     "sidebar-width",
                     String(parseInt(sidebar.style.width, 10)));
+                scheduleSave();
             }
 
             resizer.addEventListener("mousedown", (e) => {
@@ -65,6 +66,7 @@
             resizer.addEventListener("dblclick", () => {
                 localStorage.removeItem("sidebar-width");
                 setWidth(DEFAULT_WIDTH);
+                scheduleSave();
             });
 
             const saved = parseInt(localStorage.getItem("sidebar-width"), 10);
@@ -301,8 +303,12 @@
             if (execBtn) executeQuery(execBtn, page);
         }
 
-        function openTab(label, query, serverID, dbName) {
-            const id = "tab-" + (++tabCounter);
+        function openTab(label, query, serverID, dbName, id) {
+            if (!id) id = "tab-" + (++tabCounter);
+            else {
+                const n = parseInt(id.replace("tab-", ""), 10);
+                if (n > tabCounter) tabCounter = n;
+            }
 
             // Create tab button
             const btn = document.createElement("button");
@@ -323,7 +329,9 @@
             panel.style.display = "none";
             document.getElementById("tab-contents").appendChild(panel);
 
-            fetch("/api/tabs/script-panel")
+            switchTab(id);
+
+            return fetch("/api/tabs/script-panel")
                 .then((r) => r.text())
                 .then((html) => {
                     panel.innerHTML = html;
@@ -344,17 +352,17 @@
                         }
                     }
 
-                    // F5 keyboard shortcut
+                    // F5 keyboard shortcut and auto-save of the editor content
                     const textarea = panel.querySelector("textarea[name='sql_query']");
                     const execBtn = panel.querySelector("button[onclick='executeQuery(this)']");
                     if (textarea && execBtn) {
                         textarea.addEventListener("keydown", (e) => {
                             if (e.key === "F5") { e.preventDefault(); execBtn.click(); }
                         });
+                        textarea.addEventListener("input", scheduleSave);
                     }
+                    scheduleSave();
                 });
-
-            switchTab(id);
         }
 
         function openSelectTab(tableURL) {
@@ -385,6 +393,229 @@
                 switchTab(last.dataset.tabId);
             }
         }
+
+        // -----------------------------------------------------------------------------
+        // Workspace persistence – save UI state to sqlite and restore it after refresh.
+        // -----------------------------------------------------------------------------
+        let workspaceRestored = false;
+        let restoringWorkspace = false;
+        let saveTimer = null;
+        let selectedTreeId = "servers-group";
+        let pendingTreeState = null;
+        let treeRestoreApplied = false;
+
+        function collectWorkspaceState() {
+            const tabs = [];
+            document.querySelectorAll(".tab-btn").forEach((btn) => {
+                if (btn.dataset.tabId === "dashboard") return;
+                const panel = document.getElementById("tab-content-" + btn.dataset.tabId);
+                if (!panel) return;
+                const form = panel.querySelector("#query-editor");
+                const editor = form ? form.querySelector("textarea[name='sql_query']") : null;
+                const sid = form ? form.querySelector("input[name='server_id']") : null;
+                const db = form ? form.querySelector("input[name='db_name']") : null;
+                const titleEl = btn.querySelector("span");
+                tabs.push({
+                    id: btn.dataset.tabId,
+                    title: titleEl ? titleEl.textContent : "Query",
+                    server_id: sid ? parseInt(sid.value, 10) || 0 : 0,
+                    db_name: db ? db.value : "",
+                    query: editor ? editor.value : "",
+                    tab_order: tabs.length,
+                });
+            });
+
+            const active = Array.from(document.querySelectorAll(".tab-btn"))
+                .find((b) => b.classList.contains("bg-gray-900"));
+            const sidebar = document.getElementById("sidebar");
+            const treeRoot = document.getElementById("tree-root");
+            const expandedTree = [];
+            if (treeRoot) {
+                treeRoot.querySelectorAll("div[id]").forEach((d) => {
+                    if (d.childElementCount > 0) expandedTree.push(d.id);
+                });
+            }
+
+            return {
+                active_tab_id: active ? active.dataset.tabId : "dashboard",
+                layout: {
+                    sidebar_width: sidebar ? String(parseInt(sidebar.style.width, 10) || 256) : "",
+                    selected_tree: selectedTreeId,
+                    expanded_tree: expandedTree,
+                },
+                tabs: tabs,
+            };
+        }
+
+        function saveWorkspace(beacon) {
+            const body = JSON.stringify(collectWorkspaceState());
+            if (beacon && navigator.sendBeacon) {
+                navigator.sendBeacon(
+                    "/api/workspace",
+                    new Blob([body], { type: "application/json" }));
+                return;
+            }
+            fetch("/api/workspace", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: body,
+            }).catch(() => {});
+        }
+
+        function scheduleSave() {
+            if (!workspaceRestored || restoringWorkspace) return;
+            if (saveTimer) clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => { saveTimer = null; saveWorkspace(false); }, 500);
+        }
+
+        function restoreWorkspace() {
+            if (workspaceRestored || !document.getElementById("tab-bar")) return;
+            workspaceRestored = true;
+            restoringWorkspace = true;
+
+            fetch("/api/workspace")
+                .then((r) => r.json())
+                .then(async (state) => {
+                    const layout = state.layout || {};
+                    if (layout.sidebar_width) {
+                        const sidebar = document.getElementById("sidebar");
+                        if (sidebar) sidebar.style.width = layout.sidebar_width + "px";
+                    }
+
+                    pendingTreeState = {
+                        selected_tree: layout.selected_tree || "",
+                        expanded_tree: layout.expanded_tree || [],
+                    };
+                    waitForTreeRoot(() => applyTreeRestore(), 50);
+
+                    const openings = (state.tabs || []).map((tab) =>
+                        openTab(tab.title, tab.query, tab.server_id, tab.db_name, tab.id));
+
+                    await Promise.all(openings);
+
+                    const target = document.querySelector(
+                        '.tab-btn[data-tab-id="' + state.active_tab_id + '"]');
+                    switchTab(target ? state.active_tab_id : "dashboard");
+                })
+                .catch(() => switchTab("dashboard"))
+                .finally(() => { restoringWorkspace = false; });
+        }
+
+        // Highlights the currently selected tree node (the one whose children
+        // container matches selectedTreeId).
+        function highlightTreeSelection() {
+            document.querySelectorAll("#tree-root button[hx-get]").forEach((b) => {
+                const active = b.getAttribute("hx-target") === "#" + selectedTreeId;
+                b.classList.toggle("text-blue-400", active);
+                b.classList.toggle("font-semibold", active);
+            });
+        }
+
+        // Expands one lazily-loaded tree node by fetching its children exactly
+        // like htmx would (the button and its container are siblings).
+        // Resolves with true when the node was (or already is) expanded,
+        // false when its container does not exist yet (parent not loaded).
+        function expandTreeContainer(id) {
+            const container = document.getElementById(id);
+            if (container && container.childElementCount > 0) return Promise.resolve(true);
+            if (!container) return Promise.resolve(false);
+            const btn = container.previousElementSibling;
+            if (!btn || !btn.hasAttribute("hx-get")) return Promise.resolve(false);
+            const url = btn.getAttribute("hx-get");
+            return fetch(url)
+                .then((r) => { if (!r.ok) throw r; return r.text(); })
+                .then((html) => { container.innerHTML = html; return true; })
+                .catch(() => false);
+        }
+
+        // Re-expands the saved tree state after a page refresh. Parent nodes
+        // are fetched before children by retrying in rounds until no pending
+        // node can be expanded, then the saved selection is highlighted.
+        function applyTreeRestore() {
+            if (treeRestoreApplied || !pendingTreeState) return;
+            if (!document.getElementById("servers-group")) return;
+            treeRestoreApplied = true;
+            const state = pendingTreeState;
+            pendingTreeState = null;
+
+            const remaining = (state.expanded_tree || []).slice();
+            if (state.selected_tree && !remaining.includes(state.selected_tree)) {
+                remaining.push(state.selected_tree);
+            }
+
+            function step() {
+                const pending = remaining.slice();
+                remaining.length = 0;
+                let progressed = false;
+                let chain = Promise.resolve();
+                pending.forEach((id) => {
+                    chain = chain.then(() =>
+                        expandTreeContainer(id).then((done) => {
+                            if (done) progressed = true;
+                            else remaining.push(id);
+                        }));
+                });
+                chain.then(() => {
+                    if (progressed && remaining.length > 0) {
+                        step();
+                    } else {
+                        if (state.selected_tree) selectedTreeId = state.selected_tree;
+                        highlightTreeSelection();
+                    }
+                });
+            }
+            step();
+        }
+
+        // Waits (polling) until the root tree node exists, i.e. the tree has
+        // been loaded, then invokes cb.
+        function waitForTreeRoot(cb, tries) {
+            const el = document.getElementById("servers-group");
+            if (el) { cb(); return; }
+            if (tries <= 0) return;
+            setTimeout(() => waitForTreeRoot(cb, tries - 1), 100);
+        }
+
+        // Remembers the clicked tree node and persists the selection.
+        document.addEventListener("click", (e) => {
+            const btn = e.target.closest("#tree-root button[hx-get]");
+            if (!btn) return;
+            const target = btn.getAttribute("hx-target");
+            if (!target) return;
+            selectedTreeId = target.replace(/^#/, "");
+            highlightTreeSelection();
+            scheduleSave();
+        });
+        document.addEventListener("DOMContentLoaded", restoreWorkspace);
+        document.addEventListener("DOMContentLoaded", () => {
+            const tabBar = document.getElementById("tab-bar");
+            if (tabBar) tabBar.addEventListener("click", scheduleSave);
+        });
+        window.addEventListener("pagehide", () => {
+            if (workspaceRestored) saveWorkspace(true);
+        });
+
+        // The auth shell is swapped in place (#app-root, outerHTML), so the
+        // DOMContentLoaded restore only runs on the first visit. Watch for the
+        // login <-> dashboard transitions and re-run / reset accordingly.
+        function observeAuthLayout() {
+            document.addEventListener("htmx:afterSwap", (e) => {
+                const elt = e.detail && e.detail.elt;
+                if (!elt || elt.id !== "app-root") return;
+                if (document.getElementById("tab-bar")) {
+                    if (!workspaceRestored) restoreWorkspace();
+                } else if (workspaceRestored) {
+                    workspaceRestored = false;
+                    restoringWorkspace = false;
+                    treeRestoreApplied = false;
+                    pendingTreeState = null;
+                    selectedTreeId = "servers-group";
+                    tabCounter = 0;
+                    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+                }
+            });
+        }
+        document.addEventListener("DOMContentLoaded", observeAuthLayout);
     </script>
 </head>
 <body class="bg-gray-900 text-gray-100 h-screen font-sans antialiased" hx-request='{"credentials": "same-origin"}'>

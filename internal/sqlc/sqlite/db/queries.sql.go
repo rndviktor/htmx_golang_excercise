@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createServer = `-- name: CreateServer :one
@@ -127,6 +128,50 @@ func (q *Queries) GetServerByID(ctx context.Context, arg GetServerByIDParams) (S
 	return i, err
 }
 
+const getUserWorkspace = `-- name: GetUserWorkspace :one
+SELECT user_id, active_tab_id, layout_metadata, updated_at FROM user_workspaces
+WHERE user_id = ?
+LIMIT 1
+`
+
+func (q *Queries) GetUserWorkspace(ctx context.Context, userID int64) (UserWorkspace, error) {
+	row := q.db.QueryRowContext(ctx, getUserWorkspace, userID)
+	var i UserWorkspace
+	err := row.Scan(
+		&i.UserID,
+		&i.ActiveTabID,
+		&i.LayoutMetadata,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const insertWorkspaceTab = `-- name: InsertWorkspaceTab :exec
+INSERT INTO workspace_tabs (id, user_id, title, connection_id, query_text, tab_order, created_at)
+VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+`
+
+type InsertWorkspaceTabParams struct {
+	ID           string         `json:"id"`
+	UserID       sql.NullInt64  `json:"user_id"`
+	Title        string         `json:"title"`
+	ConnectionID sql.NullString `json:"connection_id"`
+	QueryText    sql.NullString `json:"query_text"`
+	TabOrder     int64          `json:"tab_order"`
+}
+
+func (q *Queries) InsertWorkspaceTab(ctx context.Context, arg InsertWorkspaceTabParams) error {
+	_, err := q.db.ExecContext(ctx, insertWorkspaceTab,
+		arg.ID,
+		arg.UserID,
+		arg.Title,
+		arg.ConnectionID,
+		arg.QueryText,
+		arg.TabOrder,
+	)
+	return err
+}
+
 const listServersByGroup = `-- name: ListServersByGroup :many
 SELECT 
     s.id, 
@@ -181,4 +226,71 @@ func (q *Queries) ListServersByGroup(ctx context.Context, userID int64) ([]ListS
 		return nil, err
 	}
 	return items, nil
+}
+
+const listWorkspaceTabs = `-- name: ListWorkspaceTabs :many
+SELECT id, user_id, title, connection_id, query_text, tab_order, created_at FROM workspace_tabs
+WHERE user_id = ?
+ORDER BY tab_order, created_at
+`
+
+func (q *Queries) ListWorkspaceTabs(ctx context.Context, userID sql.NullInt64) ([]WorkspaceTab, error) {
+	rows, err := q.db.QueryContext(ctx, listWorkspaceTabs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WorkspaceTab
+	for rows.Next() {
+		var i WorkspaceTab
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Title,
+			&i.ConnectionID,
+			&i.QueryText,
+			&i.TabOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const replaceWorkspaceTabs = `-- name: ReplaceWorkspaceTabs :exec
+DELETE FROM workspace_tabs
+WHERE user_id = ?
+`
+
+func (q *Queries) ReplaceWorkspaceTabs(ctx context.Context, userID sql.NullInt64) error {
+	_, err := q.db.ExecContext(ctx, replaceWorkspaceTabs, userID)
+	return err
+}
+
+const saveUserWorkspace = `-- name: SaveUserWorkspace :exec
+INSERT INTO user_workspaces (user_id, active_tab_id, layout_metadata, updated_at)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(user_id) DO UPDATE SET
+    active_tab_id = excluded.active_tab_id,
+    layout_metadata = excluded.layout_metadata,
+    updated_at = CURRENT_TIMESTAMP
+`
+
+type SaveUserWorkspaceParams struct {
+	UserID         int64          `json:"user_id"`
+	ActiveTabID    string         `json:"active_tab_id"`
+	LayoutMetadata sql.NullString `json:"layout_metadata"`
+}
+
+func (q *Queries) SaveUserWorkspace(ctx context.Context, arg SaveUserWorkspaceParams) error {
+	_, err := q.db.ExecContext(ctx, saveUserWorkspace, arg.UserID, arg.ActiveTabID, arg.LayoutMetadata)
+	return err
 }

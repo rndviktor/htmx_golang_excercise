@@ -80,3 +80,30 @@ CREATE TABLE IF NOT EXISTS setting (
     value TEXT,
     FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS user_workspaces (
+    user_id INTEGER PRIMARY KEY REFERENCES user(id),
+    active_tab_id TEXT NOT NULL,
+    layout_metadata TEXT DEFAULT '{}', -- sidebar width, expanded nodes
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS workspace_tabs (
+    id TEXT PRIMARY KEY, -- client or server generated UUID
+    user_id INTEGER REFERENCES user(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    connection_id TEXT, -- target DB connection
+    query_text TEXT DEFAULT '',
+    tab_order INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS query_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES user(id) ON DELETE CASCADE,
+    connection_id TEXT,
+    query_text TEXT NOT NULL,
+    executed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    duration_ms INTEGER,
+    status VARCHAR(50)
+);

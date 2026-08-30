@@ -58,6 +58,8 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/{category}", s.handleTableCategory)
 		r.Get("/api/servers/{serverID}/roles", s.handleServerRoles)
 		r.Get("/api/servers/{serverID}/tablespaces", s.handleServerTablespaces)
+		r.Get("/api/workspace", s.handleWorkspaceGet)
+		r.Post("/api/workspace", s.handleWorkspaceSave)
 	})
 
 	return r

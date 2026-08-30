@@ -21,6 +21,16 @@ type Process struct {
 	UtilityPath sql.NullString `json:"utility_path"`
 }
 
+type QueryHistory struct {
+	ID           int64          `json:"id"`
+	UserID       sql.NullInt64  `json:"user_id"`
+	ConnectionID sql.NullString `json:"connection_id"`
+	QueryText    string         `json:"query_text"`
+	ExecutedAt   sql.NullTime   `json:"executed_at"`
+	DurationMs   sql.NullInt64  `json:"duration_ms"`
+	Status       sql.NullString `json:"status"`
+}
+
 type Server struct {
 	ID             int64          `json:"id"`
 	UserID         int64          `json:"user_id"`
@@ -82,4 +92,21 @@ type UserPreference struct {
 	UserID       int64  `json:"user_id"`
 	PreferenceID int64  `json:"preference_id"`
 	Value        string `json:"value"`
+}
+
+type UserWorkspace struct {
+	UserID         int64          `json:"user_id"`
+	ActiveTabID    string         `json:"active_tab_id"`
+	LayoutMetadata sql.NullString `json:"layout_metadata"`
+	UpdatedAt      sql.NullTime   `json:"updated_at"`
+}
+
+type WorkspaceTab struct {
+	ID           string         `json:"id"`
+	UserID       sql.NullInt64  `json:"user_id"`
+	Title        string         `json:"title"`
+	ConnectionID sql.NullString `json:"connection_id"`
+	QueryText    sql.NullString `json:"query_text"`
+	TabOrder     int64          `json:"tab_order"`
+	CreatedAt    sql.NullTime   `json:"created_at"`
 }
