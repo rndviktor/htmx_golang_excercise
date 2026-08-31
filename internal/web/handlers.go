@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"htmx-golang-excercise/internal/db"
+	pgdb "htmx-golang-excercise/internal/sqlc/postgres/db"
 	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
 
@@ -169,9 +171,10 @@ func (s *Server) handleServerDatabases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	names, ok := s.queryNames(w, r, pool, "databases",
-		`SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate ORDER BY datname`)
-	if !ok {
+	names, err := pgdb.New(pool).ListDatabases(r.Context())
+	if err != nil {
+		log.Printf("Failed to list databases: %v", err)
+		http.Error(w, "Failed to load databases", http.StatusInternalServerError)
 		return
 	}
 
@@ -218,8 +221,10 @@ func (s *Server) handleDatabaseCategory(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	names, ok := s.queryNames(w, r, pool, cat.Label, cat.Query)
-	if !ok {
+	names, err := cat.ListNames(r.Context(), pool)
+	if err != nil {
+		log.Printf("Failed to load %s: %v", cat.Label, err)
+		http.Error(w, "Failed to load "+cat.Label, http.StatusInternalServerError)
 		return
 	}
 
@@ -298,8 +303,10 @@ func (s *Server) handleSchemaCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	names, ok := s.queryNames(w, r, pool, cat.Label, cat.Query, schemaName)
-	if !ok {
+	names, err := cat.ListNames(r.Context(), pool, schemaName)
+	if err != nil {
+		log.Printf("Failed to load %s: %v", cat.Label, err)
+		http.Error(w, "Failed to load "+cat.Label, http.StatusInternalServerError)
 		return
 	}
 
@@ -397,13 +404,15 @@ func (s *Server) handleTableCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pool, _, _, _, _, ok := s.loadTablePool(w, r)
+	pool, _, _, schemaName, tableName, ok := s.loadTablePool(w, r)
 	if !ok {
 		return
 	}
 
-	names, ok := s.queryNames(w, r, pool, cat.Label, cat.Query, chi.URLParam(r, "schemaName"), chi.URLParam(r, "tableName"))
-	if !ok {
+	names, err := cat.ListNames(r.Context(), pool, schemaName, tableName)
+	if err != nil {
+		log.Printf("Failed to load %s: %v", cat.Label, err)
+		http.Error(w, "Failed to load "+cat.Label, http.StatusInternalServerError)
 		return
 	}
 
@@ -416,8 +425,10 @@ func (s *Server) handleServerRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	names, ok := s.queryNames(w, r, pool, "roles", `SELECT rolname FROM pg_roles ORDER BY rolname`)
-	if !ok {
+	names, err := pgdb.New(pool).ListRoles(r.Context())
+	if err != nil {
+		log.Printf("Failed to list roles: %v", err)
+		http.Error(w, "Failed to load roles", http.StatusInternalServerError)
 		return
 	}
 
@@ -430,8 +441,10 @@ func (s *Server) handleServerTablespaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	names, ok := s.queryNames(w, r, pool, "tablespaces", `SELECT spcname FROM pg_tablespace ORDER BY spcname`)
-	if !ok {
+	names, err := pgdb.New(pool).ListTablespaces(r.Context())
+	if err != nil {
+		log.Printf("Failed to list tablespaces: %v", err)
+		http.Error(w, "Failed to load tablespaces", http.StatusInternalServerError)
 		return
 	}
 
@@ -487,18 +500,31 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
+	// Send the count query and the paginated fetch in a single batch so they
+	// execute on one connection in one network round trip instead of two.
+	batch := &pgx.Batch{}
+	batch.Queue("SELECT COUNT(*) FROM ("+query+") _cnt")
+	batch.Queue("SELECT * FROM ("+query+") _q LIMIT $1 OFFSET $2", limit, offset)
+
+	conn, err := pool.Acquire(r.Context())
+	if err != nil {
+		http.Error(w, "Cannot connect to database: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer conn.Release()
+
+	br := conn.SendBatch(r.Context(), batch)
+	defer br.Close()
+
 	// Count total rows
 	var total int
-	err = pool.QueryRow(r.Context(),
-		"SELECT COUNT(*) FROM ("+query+") _cnt").Scan(&total)
-	if err != nil {
+	if err := br.QueryRow().Scan(&total); err != nil {
 		http.Error(w, "Count query failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Fetch paginated rows
-	rows, err := pool.Query(r.Context(),
-		"SELECT * FROM ("+query+") _q LIMIT $1 OFFSET $2", limit, offset)
+	rows, err := br.Query()
 	if err != nil {
 		http.Error(w, "Query failed: "+err.Error(), http.StatusBadRequest)
 		return
@@ -560,24 +586,18 @@ func (s *Server) handleTableColumns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := pool.Query(r.Context(),
-		`SELECT column_name FROM information_schema.columns
-		 WHERE table_schema = $1 AND table_name = $2
-		 ORDER BY ordinal_position`, schemaName, tableName)
+	items, err := pgdb.New(pool).GetTableColumns(r.Context(), pgdb.GetTableColumnsParams{
+		TableSchema: schemaName,
+		TableName:   tableName,
+	})
 	if err != nil {
 		http.Error(w, "Failed to query columns", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
 
 	var cols []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			http.Error(w, "Failed to scan column", http.StatusInternalServerError)
-			return
-		}
-		cols = append(cols, name)
+	for _, it := range items {
+		cols = append(cols, getString(it))
 	}
 
 	query := "SELECT " + strings.Join(cols, ", ") + "\nFROM " + tableName + ";"
