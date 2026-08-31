@@ -47,6 +47,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/servers", s.handleServerList)
 		r.Get("/api/servers/new", s.handleNewServerModal)
 		r.Get("/api/tabs/script-panel", s.handleScriptTabPanel)
+		r.Get("/api/query-history", s.handleQueryHistory)
 		r.Post("/api/execute-query", s.handleExecuteQuery)
 		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/columns", s.handleTableColumns)
 		r.Post("/api/servers", s.handleAddServer)
@@ -562,6 +563,8 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	elapsed := time.Since(start).Seconds()
+
+	s.recordQueryHistory(r.Context(), serverID, dbName, query, int64(elapsed*1000))
 
 	totalPages := (total + limit - 1) / limit
 	if totalPages < 1 {

@@ -1,0 +1,21 @@
+{{ if .Items }}
+<div class="flex flex-col">
+  {{ range .Items }}
+  <button type="button"
+          class="history-item w-full text-left px-2 py-1.5 border-b border-gray-700 hover:bg-gray-800 flex items-start gap-2 group"
+          data-history-b64="{{ .QueryB64 }}"
+          title="Click to load and run this query">
+    <div class="flex-1 min-w-0">
+      <div class="font-mono text-xs text-gray-200 break-all">{{ .QueryShort }}</div>
+      <div class="text-[10px] text-gray-500 mt-0.5 flex items-center gap-2">
+        <span>{{ .Executed }}</span>
+        {{ if .DurationMs.Valid }}<span>{{ .DurationMs.Int64 }} ms</span>{{ end }}
+        {{ if .Status.Valid }}<span class="text-green-500">{{ .Status.String }}</span>{{ end }}
+      </div>
+    </div>
+  </button>
+  {{ end }}
+</div>
+{{ else }}
+<div class="p-3 text-xs text-gray-500 italic">No query history yet. Run a query to see it here.</div>
+{{ end }}

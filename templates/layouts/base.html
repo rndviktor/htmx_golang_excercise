@@ -303,6 +303,69 @@
             if (execBtn) executeQuery(execBtn, page);
         }
 
+        function switchScriptPane(tabBtn) {
+            const panel = tabBtn.closest("[id^='tab-content']");
+            if (!panel) return;
+            const name = tabBtn.dataset.scriptTab;
+
+            panel.querySelectorAll(".script-tab").forEach((t) => {
+                const active = t.dataset.scriptTab === name;
+                t.classList.toggle("text-gray-200", active);
+                t.classList.toggle("font-semibold", active);
+                t.classList.toggle("text-gray-400", !active);
+            });
+            panel.querySelectorAll(".script-pane").forEach((p) => {
+                p.classList.toggle("hidden", p.dataset.pane !== name);
+            });
+
+            if (name === "history") loadQueryHistory(panel);
+        }
+
+        // Loads the query history list for this panel's connection into the
+        // history pane, unless it has already been fetched.
+        function loadQueryHistory(panel) {
+            const pane = panel.querySelector("#query-history-pane");
+            if (!pane) return;
+            if (pane.dataset.loaded === "1") return;
+
+            const form = panel.querySelector("#query-editor");
+            const sid = form ? form.querySelector("input[name='server_id']") : null;
+            const db = form ? form.querySelector("input[name='db_name']") : null;
+
+            const params = new URLSearchParams();
+            if (sid) params.set("server_id", sid.value);
+            if (db) params.set("db_name", db.value);
+
+            fetch("/api/query-history?" + params.toString())
+                .then((r) => { if (!r.ok) throw r; return r.text(); })
+                .then((html) => {
+                    pane.innerHTML = html;
+                    pane.dataset.loaded = "1";
+                    pane.querySelectorAll(".history-item").forEach((item) => {
+                        item.addEventListener("click", () => useHistoryItem(panel, item));
+                    });
+                })
+                .catch((r) => {
+                    pane.innerHTML = '<div class="p-3 text-xs text-red-400">Failed to load query history.</div>';
+                });
+        }
+
+        // Loads a history entry's SQL back into the editor, returns to the
+        // Query pane and runs it.
+        function useHistoryItem(panel, item) {
+            const editor = panel.querySelector("textarea[name='sql_query']");
+            if (!editor) return;
+
+            const b64 = item.dataset.historyB64;
+            if (b64) editor.value = decodeURIComponent(escape(atob(b64)));
+
+            const queryTab = panel.querySelector('.script-tab[data-script-tab="query"]');
+            if (queryTab) switchScriptPane(queryTab);
+
+            const execBtn = panel.querySelector("button[onclick='executeQuery(this)']");
+            if (execBtn) execBtn.click();
+        }
+
         function openTab(label, query, serverID, dbName, id) {
             if (!id) id = "tab-" + (++tabCounter);
             else {

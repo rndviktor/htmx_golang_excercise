@@ -19,15 +19,27 @@
 
     <!-- Left Editor Pane -->
     <div class="flex flex-col flex-1 border-r border-gray-700">
-      <div class="flex items-center px-2 py-1 text-xs bg-gray-800 border-b border-gray-700 text-gray-400">
-        <strong class="text-gray-200">Query</strong><span class="mx-1">|</span>Query History
+      <div class="flex items-center text-xs bg-gray-800 border-b border-gray-700 text-gray-400">
+        <button type="button"
+                data-script-tab="query"
+                onclick="switchScriptPane(this)"
+                class="script-tab px-3 py-1 text-gray-200 font-semibold border-r border-gray-700 cursor-pointer">
+          Query
+        </button>
+        <button type="button"
+                data-script-tab="history"
+                onclick="switchScriptPane(this)"
+                class="script-tab px-3 py-1 hover:text-gray-200 border-r border-gray-700 cursor-pointer">
+          Query History
+        </button>
       </div>
-      <form id="query-editor" class="flex-1 m-0" onsubmit="return false;">
+      <form id="query-editor" class="script-pane flex-1 m-0" data-pane="query" onsubmit="return false;">
         <textarea
           name="sql_query"
           class="w-full h-full border-none outline-none font-mono text-sm p-2 box-border bg-gray-900 text-gray-200 placeholder-gray-500"
           placeholder="Enter SQL here..."></textarea>
       </form>
+      <div id="query-history-pane" class="script-pane flex-1 overflow-auto hidden" data-pane="history"></div>
     </div>
 
     <!-- Right Scratch Pad Pane -->

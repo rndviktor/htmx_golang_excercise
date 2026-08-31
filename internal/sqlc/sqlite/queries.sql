@@ -50,3 +50,14 @@ WHERE user_id = ?;
 -- name: InsertWorkspaceTab :exec
 INSERT INTO workspace_tabs (id, user_id, title, connection_id, query_text, tab_order, created_at)
 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
+
+-- name: ListQueryHistory :many
+SELECT id, user_id, connection_id, query_text, executed_at, duration_ms, status
+FROM query_history
+WHERE user_id = ? AND (? = '' OR connection_id = ?)
+ORDER BY executed_at DESC, id DESC
+LIMIT 50;
+
+-- name: RecordQueryHistory :exec
+INSERT INTO query_history (user_id, connection_id, query_text, executed_at, duration_ms, status)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?);
