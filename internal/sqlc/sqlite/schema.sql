@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS workspace_tabs (
 CREATE TABLE IF NOT EXISTS query_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES user(id) ON DELETE CASCADE,
+    tab_id TEXT,
     connection_id TEXT,
     query_text TEXT NOT NULL,
     executed_at DATETIME DEFAULT CURRENT_TIMESTAMP,

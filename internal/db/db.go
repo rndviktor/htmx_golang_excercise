@@ -43,12 +43,38 @@ func Open(path string) (*sql.DB, *sqlite.Queries, error) {
 		return nil, nil, fmt.Errorf("apply schema: %w", err)
 	}
 
+	if err := migrate(database); err != nil {
+		database.Close()
+		return nil, nil, fmt.Errorf("migrate: %w", err)
+	}
+
 	if err := seedDefaults(database); err != nil {
 		database.Close()
 		return nil, nil, fmt.Errorf("seed defaults: %w", err)
 	}
 
 	return database, sqlite.New(database), nil
+}
+
+// migrate applies additive changes to tables that already exist. The base
+// schema uses CREATE TABLE IF NOT EXISTS, which leaves pre-existing tables
+// untouched, so columns added later are applied here idempotently.
+func migrate(database *sql.DB) error {
+	rows, err := database.Query(`SELECT name FROM pragma_table_info('query_history') WHERE name = 'tab_id'`)
+	if err != nil {
+		return err
+	}
+	exists := rows.Next()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := database.Exec(`ALTER TABLE query_history ADD COLUMN tab_id TEXT`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // seedDefaults creates the demo admin user and its "Servers" group used

@@ -124,7 +124,9 @@
                         const item = menuItem(label, false);
                         item.addEventListener("click", () => {
                             if (label === "SELECT Script" && currentTableURL) {
-                                openSelectTab(currentTableURL);
+                                openSelectScriptTab(currentTableURL);
+                            } else if (label === "CREATE Script" && currentTableURL) {
+                                openCreateScriptTab(currentTableURL);
                             } else {
                                 openTab(label);
                             }
@@ -216,6 +218,10 @@
             box.parentElement.scrollTop = box.parentElement.scrollHeight;
         }
 
+        function panelTabId(panel) {
+            return (panel.id || "").replace("tab-content-", "");
+        }
+
         function executeQuery(btn, page) {
             const panel = btn.closest("[id^='tab-content']");
             if (!panel) return;
@@ -237,6 +243,7 @@
                 sql_query: query,
                 server_id: sid.value,
                 db_name: db.value,
+                tab_id: panelTabId(panel),
                 page: String(page),
                 limit: "1000",
             });
@@ -253,6 +260,7 @@
                     tmp.innerHTML = html;
                     const result = tmp.querySelector(".query-result");
                     const elapsed = result.dataset.elapsed || "0";
+                    const message = result.dataset.message || "";
                     if (grid && result) grid.innerHTML = result.innerHTML;
 
                     const total = parseInt(result.dataset.total) || 0;
@@ -260,10 +268,15 @@
                     const curPage = parseInt(result.dataset.page) || 1;
                     const rows = grid ? grid.querySelectorAll("tbody tr").length : 0;
 
-                    if (status) status.textContent = total + " row" + (total !== 1 ? "s" : "") + " (" + rows + " on page) — " + elapsed + "s";
-
                     logMessage(panel, "info", "Query executed in " + elapsed + "s");
-                    logMessage(panel, "success", total + " row" + (total !== 1 ? "s" : "") + " returned");
+
+                    if (message) {
+                        if (status) status.textContent = message + " — " + elapsed + "s";
+                        logMessage(panel, "success", message);
+                    } else {
+                        if (status) status.textContent = total + " row" + (total !== 1 ? "s" : "") + " (" + rows + " on page) — " + elapsed + "s";
+                        logMessage(panel, "success", total + " row" + (total !== 1 ? "s" : "") + " returned");
+                    }
 
                     if (totalPages > 1) {
                         pag.classList.remove("hidden");
@@ -326,7 +339,6 @@
         function loadQueryHistory(panel) {
             const pane = panel.querySelector("#query-history-pane");
             if (!pane) return;
-            if (pane.dataset.loaded === "1") return;
 
             const form = panel.querySelector("#query-editor");
             const sid = form ? form.querySelector("input[name='server_id']") : null;
@@ -335,12 +347,14 @@
             const params = new URLSearchParams();
             if (sid) params.set("server_id", sid.value);
             if (db) params.set("db_name", db.value);
+            params.set("tab_id", panelTabId(panel));
+
+            pane.innerHTML = '<div class="p-3 text-xs text-gray-500 italic">Loading…</div>';
 
             fetch("/api/query-history?" + params.toString())
                 .then((r) => { if (!r.ok) throw r; return r.text(); })
                 .then((html) => {
                     pane.innerHTML = html;
-                    pane.dataset.loaded = "1";
                     pane.querySelectorAll(".history-item").forEach((item) => {
                         item.addEventListener("click", () => useHistoryItem(panel, item));
                     });
@@ -366,11 +380,22 @@
             if (execBtn) execBtn.click();
         }
 
+        // Generates a unique id for a newly opened script tab. GUIDs keep tab
+        // ids collision-free across sessions (the same id is persisted to
+        // workspace_tabs and used as the query_history.tab_id key).
+        function newTabId() {
+            if (window.crypto && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            return "tab-" + (++tabCounter);
+        }
+
         function openTab(label, query, serverID, dbName, id) {
-            if (!id) id = "tab-" + (++tabCounter);
-            else {
+            if (!id) {
+                id = newTabId();
+            } else {
                 const n = parseInt(id.replace("tab-", ""), 10);
-                if (n > tabCounter) tabCounter = n;
+                if (!isNaN(n) && n > tabCounter) tabCounter = n;
             }
 
             // Create tab button
@@ -428,7 +453,7 @@
                 });
         }
 
-        function openSelectTab(tableURL) {
+        function openSelectScriptTab(tableURL) {
             const baseURL = tableURL.replace(/\/children$/, "");
             const parts = baseURL.split("/");
             const tableName = parts.pop();
@@ -439,6 +464,20 @@
                 .then((r) => r.json())
                 .then((data) => {
                     openTab("SELECT " + tableName, data.query, serverID, dbName);
+                });
+        }
+
+        function openCreateScriptTab(tableURL) {
+            const baseURL = tableURL.replace(/\/children$/, "");
+            const parts = baseURL.split("/");
+            const tableName = parts.pop();
+            // URL: /api/servers/{id}/databases/{db}/schemas/{schema}/tables/{table}
+            const serverID = parts[3];
+            const dbName = parts[5];
+            fetch(baseURL + "/create-script")
+                .then((r) => { if (!r.ok) throw r; return r.json(); })
+                .then((data) => {
+                    openTab("CREATE " + tableName, data.query, serverID, dbName);
                 });
         }
 

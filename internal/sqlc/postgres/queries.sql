@@ -95,6 +95,36 @@ SELECT column_name FROM information_schema.columns
 WHERE table_schema = $1 AND table_name = $2
 ORDER BY ordinal_position;
 
+-- name: GetTableColumnsDetailed :many
+SELECT
+    c.column_name,
+    c.data_type,
+    c.is_nullable,
+    c.column_default,
+    c.character_maximum_length,
+    COALESCE(coll.collname, '') AS collation
+FROM information_schema.columns c
+LEFT JOIN pg_attribute a ON a.attrelid = ($1 || '.' || $2)::regclass AND a.attname = c.column_name
+LEFT JOIN pg_collation coll ON coll.oid = a.attcollation
+WHERE c.table_schema = $1 AND c.table_name = $2
+ORDER BY c.ordinal_position;
+
+-- name: GetTableInfo :one
+SELECT tableowner, tablespace
+FROM pg_tables
+WHERE schemaname = $1 AND tablename = $2
+LIMIT 1;
+
+-- name: GetPrimaryKeyColumns :many
+SELECT c.conname, a.attname
+FROM pg_constraint c
+JOIN pg_class t ON c.conrelid = t.oid
+JOIN pg_namespace n ON t.relnamespace = n.oid
+JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+WHERE n.nspname = $1 AND t.relname = $2 AND c.contype = 'p'
+ORDER BY k.ord;
+
 -- name: ListTableColumns :many
 SELECT column_name || ' ' || data_type FROM information_schema.columns
 WHERE table_schema = $1 AND table_name = $2

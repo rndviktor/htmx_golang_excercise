@@ -50,6 +50,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/query-history", s.handleQueryHistory)
 		r.Post("/api/execute-query", s.handleExecuteQuery)
 		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/columns", s.handleTableColumns)
+		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/create-script", s.handleCreateScript)
 		r.Post("/api/servers", s.handleAddServer)
 		r.Get("/api/servers/{serverID}/children", s.handleServerChildren)
 		r.Get("/api/servers/{serverID}/databases", s.handleServerDatabases)
@@ -469,6 +470,7 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	query := r.FormValue("sql_query")
 	serverIDStr := r.FormValue("server_id")
 	dbName := r.FormValue("db_name")
+	tabID := r.FormValue("tab_id")
 
 	if query == "" || serverIDStr == "" || dbName == "" {
 		http.Error(w, "Missing query, server_id, or db_name", http.StatusBadRequest)
@@ -500,6 +502,36 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
+
+	// Statements that return rows (SELECT and friends) can be wrapped for
+	// count + pagination. Everything else (CREATE/DROP/ALTER/INSERT/UPDATE/
+	// DELETE/...) is executed directly and returns a command tag instead.
+	if !isRowReturning(query) {
+		exec, err := pool.Exec(r.Context(), query)
+		elapsed := time.Since(start).Seconds()
+
+		message := "OK"
+		if err != nil {
+			message = err.Error()
+		} else {
+			message = exec.String()
+		}
+
+		s.recordQueryHistory(r.Context(), serverID, dbName, tabID, query, int64(elapsed*1000))
+
+		RenderPartial(w, "query_result.html", map[string]any{
+			"Headers":    []string{},
+			"Rows":       [][]string{},
+			"Page":       1,
+			"Total":      0,
+			"TotalPages": 1,
+			"Limit":      limit,
+			"Offset":     0,
+			"Elapsed":    elapsed,
+			"Message":    message,
+		})
+		return
+	}
 
 	// Send the count query and the paginated fetch in a single batch so they
 	// execute on one connection in one network round trip instead of two.
@@ -564,7 +596,7 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 
 	elapsed := time.Since(start).Seconds()
 
-	s.recordQueryHistory(r.Context(), serverID, dbName, query, int64(elapsed*1000))
+	s.recordQueryHistory(r.Context(), serverID, dbName, tabID, query, int64(elapsed*1000))
 
 	totalPages := (total + limit - 1) / limit
 	if totalPages < 1 {
@@ -580,7 +612,43 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		"Limit":      limit,
 		"Offset":     offset,
 		"Elapsed":    elapsed,
+		"Message":    "",
 	})
+}
+
+// isRowReturning reports whether the trimmed query is one that returns a
+// result set (and can therefore be wrapped for count/pagination). All other
+// statements (DDL/DML) are executed directly by handleExecuteQuery.
+func isRowReturning(query string) bool {
+	trimmed := strings.TrimSpace(strings.ToUpper(query))
+	if trimmed == "" {
+		return false
+	}
+	// Skip leading comment lines.
+	for strings.HasPrefix(trimmed, "--") {
+		if idx := strings.Index(trimmed, "\n"); idx >= 0 {
+			trimmed = strings.TrimSpace(trimmed[idx+1:])
+		} else {
+			return false
+		}
+	}
+	// Advance past an optional leading "WITH x AS (...) " CTE to the final
+	// statement keyword.
+	idx := strings.Index(trimmed, " ")
+	if idx < 0 {
+		idx = len(trimmed)
+	}
+	first := trimmed[:idx]
+	switch first {
+	case "SELECT", "VALUES", "TABLE", "SHOW", "EXPLAIN":
+		return true
+	}
+	// A query that starts with WITH needs inspection: a trailing SELECT
+	// returns rows, while a trailing INSERT/UPDATE/DELETE does not.
+	if first == "WITH" {
+		return strings.HasSuffix(trimmed, "SELECT") || strings.HasSuffix(trimmed, ")")
+	}
+	return false
 }
 
 func (s *Server) handleTableColumns(w http.ResponseWriter, r *http.Request) {

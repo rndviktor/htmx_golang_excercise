@@ -55,7 +55,9 @@ CREATE TABLE pg_subscription (
 
 CREATE TABLE pg_tables (
     tablename TEXT NOT NULL,
-    schemaname TEXT NOT NULL
+    schemaname TEXT NOT NULL,
+    tableowner TEXT NOT NULL,
+    tablespace TEXT
 );
 
 CREATE TABLE pg_views (
@@ -95,7 +97,21 @@ CREATE TABLE pg_class (
 CREATE TABLE pg_constraint (
     conname TEXT NOT NULL,
     contype CHAR NOT NULL,
-    conrelid INTEGER NOT NULL
+    conrelid INTEGER NOT NULL,
+    conkey INTEGER[]
+);
+
+CREATE TABLE pg_attribute (
+    attrelid INTEGER NOT NULL,
+    attname TEXT NOT NULL,
+    attnum INTEGER NOT NULL,
+    atttypid INTEGER NOT NULL,
+    attcollation INTEGER NOT NULL
+);
+
+CREATE TABLE pg_collation (
+    oid INTEGER NOT NULL,
+    collname TEXT NOT NULL
 );
 
 CREATE TABLE pg_trigger (

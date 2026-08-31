@@ -7,7 +7,50 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const getPrimaryKeyColumns = `-- name: GetPrimaryKeyColumns :many
+SELECT c.conname, a.attname
+FROM pg_constraint c
+JOIN pg_class t ON c.conrelid = t.oid
+JOIN pg_namespace n ON t.relnamespace = n.oid
+JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+WHERE n.nspname = $1 AND t.relname = $2 AND c.contype = 'p'
+ORDER BY k.ord
+`
+
+type GetPrimaryKeyColumnsParams struct {
+	Nspname string
+	Relname string
+}
+
+type GetPrimaryKeyColumnsRow struct {
+	Conname string
+	Attname string
+}
+
+func (q *Queries) GetPrimaryKeyColumns(ctx context.Context, arg GetPrimaryKeyColumnsParams) ([]GetPrimaryKeyColumnsRow, error) {
+	rows, err := q.db.Query(ctx, getPrimaryKeyColumns, arg.Nspname, arg.Relname)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPrimaryKeyColumnsRow
+	for rows.Next() {
+		var i GetPrimaryKeyColumnsRow
+		if err := rows.Scan(&i.Conname, &i.Attname); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const getTableColumns = `-- name: GetTableColumns :many
 
@@ -40,6 +83,86 @@ func (q *Queries) GetTableColumns(ctx context.Context, arg GetTableColumnsParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const getTableColumnsDetailed = `-- name: GetTableColumnsDetailed :many
+SELECT
+    c.column_name,
+    c.data_type,
+    c.is_nullable,
+    c.column_default,
+    c.character_maximum_length,
+    COALESCE(coll.collname, '') AS collation
+FROM information_schema.columns c
+LEFT JOIN pg_attribute a ON a.attrelid = ($1 || '.' || $2)::regclass AND a.attname = c.column_name
+LEFT JOIN pg_collation coll ON coll.oid = a.attcollation
+WHERE c.table_schema = $1 AND c.table_name = $2
+ORDER BY c.ordinal_position
+`
+
+type GetTableColumnsDetailedParams struct {
+	Column1 pgtype.Text
+	Column2 pgtype.Text
+}
+
+type GetTableColumnsDetailedRow struct {
+	ColumnName             interface{}
+	DataType               interface{}
+	IsNullable             interface{}
+	ColumnDefault          interface{}
+	CharacterMaximumLength interface{}
+	Collation              string
+}
+
+func (q *Queries) GetTableColumnsDetailed(ctx context.Context, arg GetTableColumnsDetailedParams) ([]GetTableColumnsDetailedRow, error) {
+	rows, err := q.db.Query(ctx, getTableColumnsDetailed, arg.Column1, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTableColumnsDetailedRow
+	for rows.Next() {
+		var i GetTableColumnsDetailedRow
+		if err := rows.Scan(
+			&i.ColumnName,
+			&i.DataType,
+			&i.IsNullable,
+			&i.ColumnDefault,
+			&i.CharacterMaximumLength,
+			&i.Collation,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTableInfo = `-- name: GetTableInfo :one
+SELECT tableowner, tablespace
+FROM pg_tables
+WHERE schemaname = $1 AND tablename = $2
+LIMIT 1
+`
+
+type GetTableInfoParams struct {
+	Schemaname string
+	Tablename  string
+}
+
+type GetTableInfoRow struct {
+	Tableowner string
+	Tablespace pgtype.Text
+}
+
+func (q *Queries) GetTableInfo(ctx context.Context, arg GetTableInfoParams) (GetTableInfoRow, error) {
+	row := q.db.QueryRow(ctx, getTableInfo, arg.Schemaname, arg.Tablename)
+	var i GetTableInfoRow
+	err := row.Scan(&i.Tableowner, &i.Tablespace)
+	return i, err
 }
 
 const listCasts = `-- name: ListCasts :many

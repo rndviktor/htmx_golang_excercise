@@ -173,9 +173,11 @@ func (q *Queries) InsertWorkspaceTab(ctx context.Context, arg InsertWorkspaceTab
 }
 
 const listQueryHistory = `-- name: ListQueryHistory :many
-SELECT id, user_id, connection_id, query_text, executed_at, duration_ms, status
+SELECT id, user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status
 FROM query_history
-WHERE user_id = ? AND (? = '' OR connection_id = ?)
+WHERE user_id = ?
+  AND (? = '' OR tab_id = ?)
+  AND (? = '' OR connection_id = ?)
 ORDER BY executed_at DESC, id DESC
 LIMIT 50
 `
@@ -183,11 +185,19 @@ LIMIT 50
 type ListQueryHistoryParams struct {
 	UserID       sql.NullInt64  `json:"user_id"`
 	Column2      interface{}    `json:"column_2"`
+	TabID        sql.NullString `json:"tab_id"`
+	Column4      interface{}    `json:"column_4"`
 	ConnectionID sql.NullString `json:"connection_id"`
 }
 
 func (q *Queries) ListQueryHistory(ctx context.Context, arg ListQueryHistoryParams) ([]QueryHistory, error) {
-	rows, err := q.db.QueryContext(ctx, listQueryHistory, arg.UserID, arg.Column2, arg.ConnectionID)
+	rows, err := q.db.QueryContext(ctx, listQueryHistory,
+		arg.UserID,
+		arg.Column2,
+		arg.TabID,
+		arg.Column4,
+		arg.ConnectionID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +208,7 @@ func (q *Queries) ListQueryHistory(ctx context.Context, arg ListQueryHistoryPara
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
+			&i.TabID,
 			&i.ConnectionID,
 			&i.QueryText,
 			&i.ExecutedAt,
@@ -311,12 +322,13 @@ func (q *Queries) ListWorkspaceTabs(ctx context.Context, userID sql.NullInt64) (
 }
 
 const recordQueryHistory = `-- name: RecordQueryHistory :exec
-INSERT INTO query_history (user_id, connection_id, query_text, executed_at, duration_ms, status)
-VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+INSERT INTO query_history (user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
 `
 
 type RecordQueryHistoryParams struct {
 	UserID       sql.NullInt64  `json:"user_id"`
+	TabID        sql.NullString `json:"tab_id"`
 	ConnectionID sql.NullString `json:"connection_id"`
 	QueryText    string         `json:"query_text"`
 	DurationMs   sql.NullInt64  `json:"duration_ms"`
@@ -326,6 +338,7 @@ type RecordQueryHistoryParams struct {
 func (q *Queries) RecordQueryHistory(ctx context.Context, arg RecordQueryHistoryParams) error {
 	_, err := q.db.ExecContext(ctx, recordQueryHistory,
 		arg.UserID,
+		arg.TabID,
 		arg.ConnectionID,
 		arg.QueryText,
 		arg.DurationMs,

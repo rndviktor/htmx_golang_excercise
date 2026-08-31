@@ -23,13 +23,14 @@ type historyItemView struct {
 	Status     sql.NullString
 }
 
-// handleQueryHistory renders the query history panel for the given
-// connection. When both server_id and db_name are provided the list is
-// scoped to that connection; otherwise entries across all connections are
-// shown (an empty connection filter returns everything).
+// handleQueryHistory renders the query history panel for one script tab.
+// The tab is identified by tab_id, and the entries are scoped to that tab's
+// connection via server_id + db_name. When tab_id is absent the panel shows
+// entries for the connection regardless of tab.
 func (s *Server) handleQueryHistory(w http.ResponseWriter, r *http.Request) {
 	serverID, _ := strconv.ParseInt(r.FormValue("server_id"), 10, 64)
 	dbName := r.FormValue("db_name")
+	tabID := r.FormValue("tab_id")
 
 	connString := ""
 	if serverID > 0 && dbName != "" {
@@ -38,7 +39,9 @@ func (s *Server) handleQueryHistory(w http.ResponseWriter, r *http.Request) {
 
 	items, err := s.DB.ListQueryHistory(r.Context(), sqlite.ListQueryHistoryParams{
 		UserID:       workspaceUserID(),
-		Column2:      connString,
+		Column2:      tabID,
+		TabID:        sql.NullString{String: tabID, Valid: tabID != ""},
+		Column4:      connString,
 		ConnectionID: sql.NullString{String: connString, Valid: connString != ""},
 	})
 	if err != nil {
@@ -77,8 +80,10 @@ func formatHistoryTime(t sql.NullTime) string {
 
 // recordQueryHistory persists a completed query run to the SQLite
 // query_history table so it shows up in the script window's history panel.
-func (s *Server) recordQueryHistory(ctx context.Context, serverID int64, dbName, query string, durationMs int64) {
-	if serverID <= 0 || dbName == "" || query == "" {
+// tabID ties the entry to the specific script tab it was run from, keeping
+// each tab's history independent.
+func (s *Server) recordQueryHistory(ctx context.Context, serverID int64, dbName, tabID, query string, durationMs int64) {
+	if serverID <= 0 || dbName == "" || tabID == "" || query == "" {
 		return
 	}
 
@@ -89,6 +94,7 @@ func (s *Server) recordQueryHistory(ctx context.Context, serverID int64, dbName,
 
 	err := s.DB.RecordQueryHistory(ctx, sqlite.RecordQueryHistoryParams{
 		UserID:       workspaceUserID(),
+		TabID:        sql.NullString{String: tabID, Valid: true},
 		ConnectionID: conn,
 		QueryText:    query,
 		DurationMs:   sql.NullInt64{Int64: durationMs, Valid: true},

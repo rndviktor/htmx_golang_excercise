@@ -24,6 +24,7 @@ type Process struct {
 type QueryHistory struct {
 	ID           int64          `json:"id"`
 	UserID       sql.NullInt64  `json:"user_id"`
+	TabID        sql.NullString `json:"tab_id"`
 	ConnectionID sql.NullString `json:"connection_id"`
 	QueryText    string         `json:"query_text"`
 	ExecutedAt   sql.NullTime   `json:"executed_at"`

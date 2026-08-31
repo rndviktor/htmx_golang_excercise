@@ -4,6 +4,18 @@
 
 package db
 
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type PgAttribute struct {
+	Attrelid     int32
+	Attname      string
+	Attnum       int32
+	Atttypid     int32
+	Attcollation int32
+}
+
 type PgCast struct {
 	Castsource int32
 	Casttarget int32
@@ -15,10 +27,16 @@ type PgClass struct {
 	Relnamespace int32
 }
 
+type PgCollation struct {
+	Oid      int32
+	Collname string
+}
+
 type PgConstraint struct {
 	Conname  string
 	Contype  string
 	Conrelid int32
+	Conkey   []int32
 }
 
 type PgDatabase struct {
@@ -101,6 +119,8 @@ type PgSubscription struct {
 type PgTable struct {
 	Tablename  string
 	Schemaname string
+	Tableowner string
+	Tablespace pgtype.Text
 }
 
 type PgTablespace struct {
