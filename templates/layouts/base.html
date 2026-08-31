@@ -626,7 +626,11 @@
             const url = btn.getAttribute("hx-get");
             return fetch(url)
                 .then((r) => { if (!r.ok) throw r; return r.text(); })
-                .then((html) => { container.innerHTML = html; return true; })
+                .then((html) => {
+                    container.innerHTML = html;
+                    if (window.htmx && htmx.process) htmx.process(container);
+                    return true;
+                })
                 .catch(() => false);
         }
 
