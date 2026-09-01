@@ -127,6 +127,8 @@
                                 openSelectScriptTab(currentTableURL);
                             } else if (label === "CREATE Script" && currentTableURL) {
                                 openCreateScriptTab(currentTableURL);
+                            } else if (label === "INSERT Script" && currentTableURL) {
+                                openInsertScriptTab(currentTableURL);
                             } else {
                                 openTab(label);
                             }
@@ -478,6 +480,20 @@
                 .then((r) => { if (!r.ok) throw r; return r.json(); })
                 .then((data) => {
                     openTab("CREATE " + tableName, data.query, serverID, dbName);
+                });
+        }
+
+        function openInsertScriptTab(tableURL) {
+            const baseURL = tableURL.replace(/\/children$/, "");
+            const parts = baseURL.split("/");
+            const tableName = parts.pop();
+            // URL: /api/servers/{id}/databases/{db}/schemas/{schema}/tables/{table}
+            const serverID = parts[3];
+            const dbName = parts[5];
+            fetch(baseURL + "/insert-script")
+                .then((r) => { if (!r.ok) throw r; return r.json(); })
+                .then((data) => {
+                    openTab("INSERT " + tableName, data.query, serverID, dbName);
                 });
         }
 

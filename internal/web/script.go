@@ -93,6 +93,39 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"query": b.String()})
 }
 
+// handleInsertScript generates a skeleton INSERT statement for a table and
+// returns it as JSON {query: "..."} so the client can open a new script tab
+// pre-filled with it. Values are the column names as placeholders, matching
+// pgAdmin's INSERT Script output.
+func (s *Server) handleInsertScript(w http.ResponseWriter, r *http.Request) {
+	pool, _, _, schemaName, tableName, ok := s.loadTablePool(w, r)
+	if !ok {
+		return
+	}
+
+	items, err := pgdb.New(pool).GetTableColumns(r.Context(), pgdb.GetTableColumnsParams{
+		TableSchema: schemaName,
+		TableName:   tableName,
+	})
+	if err != nil {
+		http.Error(w, "Failed to query columns: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	cols := make([]string, 0, len(items))
+	for _, it := range items {
+		cols = append(cols, getString(it))
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(cols)), ", ")
+
+	query := "INSERT INTO " + qualIdent(schemaName, tableName) + "(\n\t" +
+		strings.Join(cols, ", ") + ")\n\tVALUES (" + placeholders + ");"
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"query": query})
+}
+
 // columnLine renders one CREATE TABLE column definition from its metadata,
 // matching pgAdmin's formatting: serial detection, collation, NOT NULL and
 // DEFAULT clauses.
