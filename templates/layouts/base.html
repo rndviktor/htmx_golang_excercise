@@ -236,10 +236,18 @@
             const pageInfo = panel.querySelector(".page-info");
             if (!form || !grid) return;
 
-            const query = form.querySelector("textarea[name='sql_query']").value;
+            const editor = form.querySelector("textarea[name='sql_query']");
             const sid = form.querySelector("input[name='server_id']");
             const db = form.querySelector("input[name='db_name']");
-            if (!sid || !db || !query) return;
+            if (!sid || !db || !editor) return;
+
+            const selStart = editor.selectionStart;
+            const selEnd = editor.selectionEnd;
+            const hasSelection = selStart !== selEnd;
+            const query = hasSelection
+                ? editor.value.substring(selStart, selEnd)
+                : editor.value;
+            if (!query) return;
 
             if (!page) page = 1;
 
@@ -290,6 +298,11 @@
                     } else {
                         pag.classList.add("hidden");
                     }
+
+                    if (hasSelection) {
+                        editor.focus();
+                        editor.setSelectionRange(selStart, selEnd);
+                    }
                 })
                 .catch(async (r) => {
                     const elapsed = ((performance.now() - t0) / 1000).toFixed(3);
@@ -302,6 +315,11 @@
 
                     const msgTab = panel.querySelector('[data-output-tab="messages"]');
                     if (msgTab) switchOutputTab(msgTab);
+
+                    if (hasSelection) {
+                        editor.focus();
+                        editor.setSelectionRange(selStart, selEnd);
+                    }
                 });
         }
 
