@@ -7,6 +7,7 @@
     <!-- Load htmx & CSS -->
     <script src="https://unpkg.com/htmx.org@2.0.2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
         // Collapses an expanded tree node. Returns true when the node was
         // open (caller should cancel the pending htmx request), false when
@@ -204,6 +205,21 @@
             document.querySelectorAll(".tab-panel").forEach((panel) => {
                 panel.style.display = panel.id === "tab-content-" + id ? "" : "none";
             });
+            activeTabId = id;
+            updateMonitoringForActiveTab();
+        }
+
+        // Monitoring only polls while the Dashboard tab is active. Switching to
+        // another tab pauses polling; returning to it resumes (if a database or
+        // deeper node is still the selected tree selection).
+        function updateMonitoringForActiveTab() {
+            if (activeTabId !== "dashboard") {
+                if (monitoringTimer) { clearInterval(monitoringTimer); monitoringTimer = null; }
+                return;
+            }
+            if (monitoringConn && monitoringBaseURL) {
+                pollMonitoring();
+            }
         }
 
         function switchOutputTab(tab) {
@@ -821,6 +837,12 @@
                     } else {
                         if (state.selected_tree) selectedTreeId = state.selected_tree;
                         highlightTreeSelection();
+                        // Selecting a database (or anything below it) via the
+                        // restored workspace should show monitoring, just like
+                        // a real click.
+                        const btn = document.querySelector(
+                            '#tree-root button[hx-get][hx-target="#' + selectedTreeId + '"]');
+                        if (btn) updateDashboardForTreeSelection(btn);
                     }
                 });
             }
@@ -836,6 +858,286 @@
             setTimeout(() => waitForTreeRoot(cb, tries - 1), 100);
         }
 
+        // -----------------------------------------------------------------------------
+        // Database Monitoring Dashboard
+        // -----------------------------------------------------------------------------
+        let monitoringTimer = null;
+        let monitoringBaseURL = null;
+        let monitoringInitialized = false;
+        let monitoringConn = null;
+        let activeTabId = "dashboard";
+        let monitoringState = {
+            blksHit: 0, blksRead: 0,
+            xactCommit: 0, xactRollback: 0,
+            inserts: 0, updates: 0, deletes: 0,
+        };
+        const chartSeries = {
+            cacheHit: [], replication: [], tps: [], ins: [], upd: [], del: [], time: [], sessions: [],
+        };
+        let charts = {};
+
+        function formatBytes(bytes) {
+            if (bytes === null || bytes === undefined || bytes < 0) return "–";
+            const units = ["B", "KB", "MB", "GB", "TB"];
+            let i = 0, n = bytes;
+            while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+            return n.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+        }
+
+        function makeChart(canvasId, type, labels, datasets) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return null;
+            if (charts[canvasId]) charts[canvasId].destroy();
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return null;
+            charts[canvasId] = new Chart(ctx, {
+                type: type,
+                data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: { legend: { labels: { color: "#cbd5e1", boxWidth: 12, font: { size: 10 } } } },
+                    scales: {
+                        x: { ticks: { color: "#64748b", maxTicksLimit: 10 }, grid: { color: "#334155" } },
+                        y: { ticks: { color: "#64748b" }, grid: { color: "#1e293b", beginAtZero: true } },
+                    },
+                },
+            });
+            return charts[canvasId];
+        }
+
+        function renderMonitoringCharts() {
+            const labels = chartSeries.time;
+            const datasets = [];
+
+            // Cache hit ratio (line, %) — computed from cumulative hits/reads deltas.
+            makeChart("chart-cache-hit", "line", labels, [{
+                label: "Cache Hit %",
+                data: chartSeries.cacheHit,
+                borderColor: "#3b82f6", backgroundColor: "rgba(59,130,246,0.1)",
+                fill: true, tension: 0.3, pointRadius: 0,
+            }]);
+
+            // Replication lag (line, bytes).
+            makeChart("chart-replication", "line", labels, [{
+                label: "Lag (bytes)",
+                data: chartSeries.replication,
+                borderColor: "#a855f7", backgroundColor: "rgba(168,85,247,0.1)",
+                fill: true, tension: 0.3, pointRadius: 0,
+            }]);
+
+            // Transaction throughput (line, TPS). commits+rollbacks.
+            makeChart("chart-txn", "line", labels, [{
+                label: "Commits/s",
+                data: chartSeries.tps,
+                borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.1)",
+                fill: true, tension: 0.3, pointRadius: 0,
+            }]);
+
+            // Row operations (line). inserts / updates / deletes per second.
+            makeChart("chart-rowops", "line", labels, [
+                { label: "Inserts/s", data: chartSeries.ins, borderColor: "#3b82f6", tension: 0.3, pointRadius: 0 },
+                { label: "Updates/s", data: chartSeries.upd, borderColor: "#eab308", tension: 0.3, pointRadius: 0 },
+                { label: "Deletes/s", data: chartSeries.del, borderColor: "#ef4444", tension: 0.3, pointRadius: 0 },
+            ]);
+
+            // Session states (doughnut / bar).
+            makeChart("chart-sessions", "bar", ["Active", "Idle Tx", "Idle"], [{
+                label: "Sessions",
+                data: chartSeries.sessions,
+                backgroundColor: ["#22c55e", "#eab308", "#3b82f6"],
+            }]);
+        }
+
+        function updateKPIs(data) {
+            document.getElementById("kpi-active-conn").textContent = data.activeConnections;
+            document.getElementById("kpi-max-conn").querySelector(".kpi-max-val").textContent =
+                (data.maxConnections || 0).toString();
+            document.getElementById("kpi-db-size").textContent = formatBytes(data.dbSizeBytes);
+            document.getElementById("kpi-active-tx").textContent = data.activeTx;
+            document.getElementById("kpi-idle-tx").textContent = data.idleTx;
+            document.getElementById("kpi-idle").textContent = data.idle;
+            document.getElementById("kpi-blocked").textContent = data.blockedQueries;
+
+            const lagEl = document.getElementById("kpi-repl-lag");
+            if (data.hasReplication) {
+                lagEl.textContent = formatUnits(data.replicationLagBytes, { bytes: ["B", "KB", "MB", "GB", "TB"] });
+                document.getElementById("kpi-repl-unit").textContent = "";
+            } else {
+                lagEl.textContent = "–";
+                document.getElementById("kpi-repl-unit").textContent = "no replica";
+            }
+        }
+
+        function formatUnits(val, units) {
+            let i = 0, n = val;
+            while (n >= 1024 && i < units.bytes.length - 1) { n /= 1024; i++; }
+            return n.toFixed(i === 0 ? 0 : 1) + " " + units.bytes[i];
+        }
+
+        function refreshMonitoring() {
+            if (!monitoringBaseURL) return;
+            // Same-origin fetch with credentials so the signed auth cookie is
+            // sent (matching htmx's default). Without it RequireAuth redirects
+            // to /login and fetch reports "Failed to fetch".
+            fetch(monitoringBaseURL, { credentials: "same-origin", headers: { "HX-Request": "true" } })
+                .then(async (r) => {
+                    if (!r.ok) {
+                        let msg = "HTTP " + r.status;
+                        try { const t = await r.text(); if (t) msg += ": " + t; } catch (_) {}
+                        throw new Error(msg);
+                    }
+                    return r.json();
+                })
+                .then((data) => {
+                    updateKPIs(data);
+
+                    // The first sample only establishes the baseline for the
+                    // cumulative counters (pg_stat_* hold totals since start),
+                    // so no time-series point is produced until the 2nd poll.
+                    if (!monitoringInitialized) {
+                        monitoringInitialized = true;
+                        monitoringState.blksHit = data.blksHit;
+                        monitoringState.blksRead = data.blksRead;
+                        monitoringState.xactCommit = data.xactCommit;
+                        monitoringState.xactRollback = data.xactRollback;
+                        monitoringState.inserts = data.inserts;
+                        monitoringState.updates = data.updates;
+                        monitoringState.deletes = data.deletes;
+                        chartSeries.sessions = [data.activeTx, data.idleTx, data.idle];
+                        renderMonitoringCharts();
+                        return;
+                    }
+
+                    // Cache hit ratio since last sample (%). Use the buffer delta.
+                    const blksHitDelta = data.blksHit - monitoringState.blksHit;
+                    const blksReadDelta = data.blksRead - monitoringState.blksRead;
+                    const total = blksHitDelta + blksReadDelta;
+                    monitoringState.blksHit = data.blksHit;
+                    monitoringState.blksRead = data.blksRead;
+                    const cacheHit = total > 0 ? (blksHitDelta / total) * 100 : 100;
+                    chartSeries.cacheHit.push(cacheHit);
+
+                    // TPS since last sample.
+                    const commitDelta = data.xactCommit - monitoringState.xactCommit;
+                    const rollbackDelta = data.xactRollback - monitoringState.xactRollback;
+                    monitoringState.xactCommit = data.xactCommit;
+                    monitoringState.xactRollback = data.xactRollback;
+                    const tps = commitDelta + rollbackDelta;
+                    chartSeries.tps.push(tps);
+
+                    // Row op rates since last sample.
+                    chartSeries.ins.push(data.inserts - monitoringState.inserts);
+                    chartSeries.upd.push(data.updates - monitoringState.updates);
+                    chartSeries.del.push(data.deletes - monitoringState.deletes);
+                    monitoringState.inserts = data.inserts;
+                    monitoringState.updates = data.updates;
+                    monitoringState.deletes = data.deletes;
+
+                    // Replication lag.
+                    chartSeries.replication.push(
+                        data.hasReplication ? data.replicationLagBytes : 0);
+
+                    // Sessions breakdown (latest snapshot).
+                    chartSeries.sessions = [data.activeTx, data.idleTx, data.idle];
+
+                    // Keep a rolling window of ~30 points.
+                    chartSeries.time.push(new Date().toLocaleTimeString());
+                    ["cacheHit", "tps", "ins", "upd", "del", "replication", "time"].forEach((k) => {
+                        if (chartSeries[k].length > 30) chartSeries[k].shift();
+                    });
+
+                    renderMonitoringCharts();
+                })
+                .catch((err) => {
+                    setMonitoringError(err && err.message ? err.message : String(err));
+                });
+        }
+
+        function setMonitoringError(msg) {
+            const el = document.getElementById("monitoring-error");
+            if (!el) return;
+            el.textContent = "Monitoring error: " + msg;
+            el.classList.remove("hidden");
+            clearTimeout(setMonitoringError._t);
+            setMonitoringError._t = setTimeout(() => el.classList.add("hidden"), 8000);
+        }
+
+        // Switches the Dashboard tab button between "Dashboard" and "Monitor"
+        // (with an activity pulse icon) depending on whether monitoring is live.
+        function setDashboardTabLabel(monitoring) {
+            const label = document.getElementById("tab-dashboard-label");
+            const icon = document.getElementById("tab-dashboard-icon");
+            if (monitoring) {
+                // Monitoring mode: single icon only, hide text and spacing.
+                if (icon) icon.textContent = "🟢";
+                if (label) label.style.display = "none";
+            } else {
+                if (icon) icon.textContent = "📊";
+                if (label) { label.style.display = ""; label.textContent = "Dashboard"; }
+            }
+        }
+
+        function startMonitoring(serverID, dbName) {
+            monitoringBaseURL = "/api/servers/" + serverID + "/databases/" + dbName + "/monitoring";
+            monitoringConn = { serverID: serverID, dbName: dbName };
+            setDashboardTabLabel(true);
+
+            // Reset cumulative counters so the first sample establishes a clean
+            // baseline and no historical spike appears.
+            monitoringInitialized = false;
+            monitoringState = { blksHit: 0, blksRead: 0, xactCommit: 0, xactRollback: 0, inserts: 0, updates: 0, deletes: 0 };
+            Object.keys(chartSeries).forEach((k) => { chartSeries[k] = []; });
+
+            const defaultView = document.getElementById("dashboard-default");
+            const monView = document.getElementById("dashboard-monitoring");
+            if (defaultView) defaultView.classList.add("hidden");
+            if (monView) monView.classList.remove("hidden");
+            const label = document.getElementById("monitoring-conn-label");
+            if (label) label.textContent = dbName + " (server " + serverID + ")";
+            document.getElementById("monitoring-refresh-label").textContent = "Refreshing every 5s";
+
+            // Initial render, then poll only while the Dashboard tab is active.
+            renderMonitoringCharts();
+            if (activeTabId !== "dashboard") return;
+            pollMonitoring();
+        }
+
+        function pollMonitoring() {
+            if (!monitoringBaseURL) return;
+            refreshMonitoring();
+            if (monitoringTimer) clearInterval(monitoringTimer);
+            monitoringTimer = setInterval(refreshMonitoring, 5000);
+        }
+
+        function stopMonitoring() {
+            if (monitoringTimer) { clearInterval(monitoringTimer); monitoringTimer = null; }
+            monitoringBaseURL = null;
+            monitoringConn = null;
+            setDashboardTabLabel(false);
+            const defaultView = document.getElementById("dashboard-default");
+            const monView = document.getElementById("dashboard-monitoring");
+            if (defaultView) defaultView.classList.remove("hidden");
+            if (monView) monView.classList.add("hidden");
+        }
+
+        // Decides, from the clicked tree node's URL, whether a database (or
+        // anything below it) is selected and the monitoring dashboard should
+        // be shown. Any node scoped under /databases/{db} shares that database
+        // connection, so schema, table and their category folders all qualify.
+        function updateDashboardForTreeSelection(btn) {
+            const url = btn ? btn.getAttribute("hx-get") : null;
+            // A database-scoped URL is any path that contains "/databases/{db}",
+            // which connectionFromTreeURL detects via parts[5].
+            const conn = connectionFromTreeURL(url);
+            if (conn) {
+                startMonitoring(conn.serverID, conn.dbName);
+            } else {
+                stopMonitoring();
+            }
+        }
+
         // Remembers the clicked tree node and persists the selection.
         document.addEventListener("click", (e) => {
             const btn = e.target.closest("#tree-root button[hx-get]");
@@ -845,6 +1147,7 @@
             selectedTreeId = target.replace(/^#/, "");
             highlightTreeSelection();
             scheduleSave();
+            updateDashboardForTreeSelection(btn);
         });
         document.addEventListener("DOMContentLoaded", restoreWorkspace);
         document.addEventListener("DOMContentLoaded", () => {
@@ -865,6 +1168,7 @@
                 if (document.getElementById("tab-bar")) {
                     if (!workspaceRestored) restoreWorkspace();
                 } else if (workspaceRestored) {
+                    stopMonitoring();
                     workspaceRestored = false;
                     restoringWorkspace = false;
                     treeRestoreApplied = false;

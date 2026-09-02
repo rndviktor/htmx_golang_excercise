@@ -1,33 +1,133 @@
-<!-- Welcome Header Card -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
-    <div class="flex items-center space-x-4">
-        <div class="p-3 bg-blue-600/10 border border-blue-500/20 rounded-lg text-blue-400">
-            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
-            </svg>
-        </div>
-        <div>
-            <h1 class="text-2xl font-bold text-white">Postgres Admin Panel</h1>
-            <p class="text-xs text-gray-400 uppercase tracking-wider font-semibold">Management Tools for PostgreSQL</p>
-        </div>
-    </div>
-</div>
+<!-- ============ Default View (no database selected) ============ -->
+<div id="dashboard-default">
 
-<!-- Quick Links Panel -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
-    <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 border-b border-gray-700 pb-2">Quick Links</h2>
-    <div class="flex items-center gap-6">
-        <!-- Add New Server Action Button -->
-        <button hx-get="/api/servers/new"
-                hx-target="#modal-container"
-                hx-swap="innerHTML"
-                class="flex flex-col items-center justify-center p-4 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 rounded-lg group transition w-36">
-            <div class="p-3 bg-blue-600/20 rounded-full mb-2 group-hover:bg-blue-600 transition text-blue-400 group-hover:text-white">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-7-7v14"></path>
+    <!-- Welcome Header Card -->
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
+        <div class="flex items-center space-x-4">
+            <div class="p-3 bg-blue-600/10 border border-blue-500/20 rounded-lg text-blue-400">
+                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
                 </svg>
             </div>
-            <span class="text-xs font-medium text-gray-300 group-hover:text-white text-center">Add New Server</span>
-        </button>
+            <div>
+                <h1 class="text-2xl font-bold text-white">Postgres Admin Panel</h1>
+                <p class="text-xs text-gray-400 uppercase tracking-wider font-semibold">Management Tools for PostgreSQL</p>
+            </div>
+        </div>
     </div>
+
+    <!-- Quick Links Panel -->
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+        <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 border-b border-gray-700 pb-2">Quick Links</h2>
+        <div class="flex items-center gap-6">
+            <!-- Add New Server Action Button -->
+            <button hx-get="/api/servers/new"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    class="flex flex-col items-center justify-center p-4 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 rounded-lg group transition w-36">
+                <div class="p-3 bg-blue-600/20 rounded-full mb-2 group-hover:bg-blue-600 transition text-blue-400 group-hover:text-white">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-7-7v14"></path>
+                    </svg>
+                </div>
+                <span class="text-xs font-medium text-gray-300 group-hover:text-white text-center">Add New Server</span>
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<!-- ============ Database Monitoring View ============ -->
+<div id="dashboard-monitoring" class="hidden">
+
+    <!-- Connection header -->
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-lg font-bold text-white">Database Monitoring</h1>
+            <p class="text-xs text-gray-400 uppercase tracking-wider font-semibold" id="monitoring-conn-label">Select a database to view its health metrics</p>
+        </div>
+        <span class="text-[10px] text-gray-500" id="monitoring-refresh-label">Refreshing every 5s</span>
+    </div>
+
+    <!-- Error / status banner (hidden until a poll fails) -->
+    <div id="monitoring-error" class="hidden mb-4 text-xs text-red-400 bg-red-900/30 border border-red-800 rounded-lg px-3 py-2"></div>
+
+    <!-- 1. Real-Time Status Cards (KPI) -->
+    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6" id="kpi-cards">
+        <!-- Active Connections -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col justify-between min-h-[90px]">
+            <span class="text-xs text-gray-400 font-medium">Active Connections</span>
+            <div class="flex items-baseline justify-between">
+                <span class="text-3xl font-bold text-blue-400" id="kpi-active-conn">–</span>
+                <span class="text-xs text-gray-500" id="kpi-max-conn"><span class="kpi-max-val">–</span> max</span>
+            </div>
+        </div>
+        <!-- Database Size -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col justify-between min-h-[90px]">
+            <span class="text-xs text-gray-400 font-medium">Database Size</span>
+            <div class="flex items-baseline justify-between">
+                <span class="text-3xl font-bold text-blue-400" id="kpi-db-size">–</span>
+            </div>
+        </div>
+        <!-- Sessions: Active / Idle Tx / Idle -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col justify-between min-h-[90px]">
+            <span class="text-xs text-gray-400 font-medium">Sessions (Active / Idle Tx / Idle)</span>
+            <div class="flex items-center gap-3 text-sm mt-1">
+                <span class="text-green-400 font-semibold" id="kpi-active-tx">–</span>
+                <span class="text-yellow-400 font-semibold" id="kpi-idle-tx">–</span>
+                <span class="text-blue-400 font-semibold" id="kpi-idle">–</span>
+            </div>
+        </div>
+        <!-- Blocked Queries -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col justify-between min-h-[90px]">
+            <span class="text-xs text-gray-400 font-medium">Blocked / Lock-Waiting</span>
+            <div class="flex items-baseline">
+                <span class="text-3xl font-bold text-red-400" id="kpi-blocked">–</span>
+            </div>
+        </div>
+        <!-- Replication Lag -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col justify-between min-h-[90px]">
+            <span class="text-xs text-gray-400 font-medium">Replication Lag</span>
+            <div class="flex items-baseline">
+                <span class="text-3xl font-bold text-purple-400" id="kpi-repl-lag">–</span>
+                <span class="ml-1 text-xs text-gray-500" id="kpi-repl-unit">bytes</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Time-Series Charts (grouped sections) -->
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+        <!-- Performance -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Performance</h3>
+            <div class="h-64"><canvas id="chart-cache-hit"></canvas></div>
+        </div>
+        <!-- Replication -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Replication Lag</h3>
+            <div class="h-64"><canvas id="chart-replication"></canvas></div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+        <!-- Transactions -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Transaction Throughput (TPS)</h3>
+            <div class="h-64"><canvas id="chart-txn"></canvas></div>
+        </div>
+        <!-- Row Operations -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Row Operations / sec</h3>
+            <div class="h-64"><canvas id="chart-rowops"></canvas></div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 mb-6">
+        <!-- Sessions breakdown (bar) -->
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Session States</h3>
+            <div class="h-56"><canvas id="chart-sessions"></canvas></div>
+        </div>
+    </div>
+
 </div>
