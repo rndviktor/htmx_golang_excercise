@@ -527,6 +527,13 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
+	// EXPLAIN returns rows but cannot be used as a subquery, so it must be
+	// executed directly rather than wrapped for count/pagination.
+	if isExplain(query) {
+		s.renderExplain(w, r, pool, query, serverID, dbName, tabID, start, limit)
+		return
+	}
+
 	// Statements that return rows (SELECT and friends) can be wrapped for
 	// count + pagination. Everything else (CREATE/DROP/ALTER/INSERT/UPDATE/
 	// DELETE/...) is executed directly and returns a command tag instead.
@@ -675,6 +682,87 @@ func isRowReturning(query string) bool {
 		return strings.HasSuffix(trimmed, "SELECT") || strings.HasSuffix(trimmed, ")")
 	}
 	return false
+}
+
+// isExplain reports whether the trimmed query starts with EXPLAIN (or
+// EXPLAIN ANALYZE). Such queries return rows but cannot be wrapped as a
+// subquery, so they are executed directly.
+func isExplain(query string) bool {
+	trimmed := strings.TrimSpace(strings.ToUpper(query))
+	if trimmed == "" {
+		return false
+	}
+	// Skip leading comment lines.
+	for strings.HasPrefix(trimmed, "--") {
+		if idx := strings.Index(trimmed, "\n"); idx >= 0 {
+			trimmed = strings.TrimSpace(trimmed[idx+1:])
+		} else {
+			return false
+		}
+	}
+	return strings.HasPrefix(trimmed, "EXPLAIN")
+}
+
+// renderExplain executes an EXPLAIN/EXPLAIN ANALYZE statement directly and
+// renders its plan rows into the explain output panel.
+func (s *Server) renderExplain(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, query string, serverID int64, dbName, tabID string, start time.Time, limit int) {
+	rows, err := pool.Query(r.Context(), query)
+	elapsed := time.Since(start).Seconds()
+
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+
+	var headers []string
+	var rowsData [][]string
+	if err == nil {
+		defer rows.Close()
+		fieldDescriptions := rows.FieldDescriptions()
+		for _, fd := range fieldDescriptions {
+			headers = append(headers, fd.Name)
+		}
+		colCount := len(fieldDescriptions)
+		rowCount := 0
+		for rows.Next() && rowCount < limit {
+			vals := make([]any, colCount)
+			valPtrs := make([]any, colCount)
+			for i := range vals {
+				valPtrs[i] = &vals[i]
+			}
+			if err := rows.Scan(valPtrs...); err != nil {
+				message = err.Error()
+				break
+			}
+			row := make([]string, colCount)
+			for i, v := range vals {
+				if v == nil {
+					row[i] = "NULL"
+				} else {
+					row[i] = fmt.Sprintf("%v", v)
+				}
+			}
+			rowsData = append(rowsData, row)
+			rowCount++
+		}
+		if err := rows.Err(); err != nil && message == "" {
+			message = err.Error()
+		}
+	}
+
+	s.recordQueryHistory(r.Context(), serverID, dbName, tabID, query, int64(elapsed*1000), int64(len(rowsData)))
+
+	RenderPartial(w, "query_result.html", map[string]any{
+		"Headers":    headers,
+		"Rows":       rowsData,
+		"Page":       1,
+		"Total":      len(rowsData),
+		"TotalPages": 1,
+		"Limit":      limit,
+		"Offset":     0,
+		"Elapsed":    elapsed,
+		"Message":    message,
+	})
 }
 
 func (s *Server) handleTableColumns(w http.ResponseWriter, r *http.Request) {

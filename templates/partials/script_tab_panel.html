@@ -12,6 +12,18 @@
       class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
       &#9724;
     </button>
+    <button
+      onclick="executeExplain(this, false)"
+      title="Explain query (EXPLAIN)"
+      class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
+      Explain
+    </button>
+    <button
+      onclick="executeExplain(this, true)"
+      title="Explain with timing and actual rows (EXPLAIN ANALYZE)"
+      class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
+      Explain Analyse
+    </button>
   </div>
 
   <!-- Top Pane: Query Editor & Scratch Pad Split View -->
@@ -63,6 +75,9 @@
       <div class="output-tab px-3 py-1.5 cursor-pointer border-r border-gray-700 text-gray-400 hover:text-gray-200 border-t-2 border-t-transparent font-normal" data-output-tab="messages" onclick="switchOutputTab(this)">
         Messages
       </div>
+      <div class="output-tab px-3 py-1.5 cursor-pointer border-r border-gray-700 text-gray-400 hover:text-gray-200 border-t-2 border-t-transparent font-normal" data-output-tab="explain" onclick="switchOutputTab(this)">
+        Explain
+      </div>
       <div class="output-tab px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 border-t-2 border-t-transparent font-normal" data-output-tab="notifications" onclick="switchOutputTab(this)">
         Notifications
       </div>
@@ -73,6 +88,11 @@
 
     <!-- Messages Panel -->
     <div id="messages-panel" class="output-panel flex-1 overflow-auto hidden">
+      <div class="p-3 text-xs font-mono text-gray-400"></div>
+    </div>
+
+    <!-- Explain Panel -->
+    <div id="explain-panel" class="output-panel flex-1 overflow-auto hidden">
       <div class="p-3 text-xs font-mono text-gray-400"></div>
     </div>
 

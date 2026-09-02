@@ -342,9 +342,66 @@
                 });
         }
 
-        function goToPage(btn, action) {
+        // Runs the current selected/full query wrapped in EXPLAIN (or EXPLAIN
+        // ANALYZE) and shows the plan in the Explain output tab.
+        function executeExplain(btn, analyze) {
             const panel = btn.closest("[id^='tab-content']");
-            const pag = panel.querySelector(".pagination-controls");
+            if (!panel) return;
+            const form = panel.querySelector("#query-editor");
+            const explainPanel = panel.querySelector("#explain-panel > div");
+            const status = panel.querySelector(".query-status");
+            if (!form) return;
+
+            const editor = form.querySelector("textarea[name='sql_query']");
+            const sid = form.querySelector("input[name='server_id']");
+            const db = form.querySelector("input[name='db_name']");
+            if (!sid || !db || !editor) return;
+
+            const hasSelection = editor.selectionStart !== editor.selectionEnd;
+            const query = hasSelection
+                ? editor.value.substring(editor.selectionStart, editor.selectionEnd)
+                : editor.value;
+            if (!query) return;
+
+            const keyword = analyze ? "EXPLAIN ANALYZE" : "EXPLAIN";
+            const body = new URLSearchParams({
+                sql_query: keyword + " " + query,
+                server_id: sid.value,
+                db_name: db.value,
+                tab_id: panelTabId(panel),
+                page: "1",
+                limit: "1000",
+            });
+
+            const t0 = performance.now();
+            if (status) status.textContent = keyword + "...";
+            fetch("/api/execute-query", { method: "POST", body })
+                .then((r) => { if (!r.ok) throw r; return r.text(); })
+                .then((html) => {
+                    const tmp = document.createElement("div");
+                    tmp.innerHTML = html;
+                    const result = tmp.querySelector(".query-result");
+                    if (result && explainPanel) {
+                        explainPanel.innerHTML = result.innerHTML;
+                    }
+                    if (status) status.textContent = keyword + " — " + ((performance.now() - t0) / 1000).toFixed(3) + "s";
+                    logMessage(panel, "info", keyword + " executed in " + ((performance.now() - t0) / 1000).toFixed(3) + "s");
+
+                    const explainTab = panel.querySelector('[data-output-tab="explain"]');
+                    if (explainTab) switchOutputTab(explainTab);
+                })
+                .catch(async (r) => {
+                    const msg = r.body ? await r.text() : "Request failed";
+                    if (explainPanel) explainPanel.innerHTML = '<div class="p-4 text-red-400 text-sm">' + msg + '</div>';
+                    if (status) status.textContent = keyword + " — Error";
+                    logMessage(panel, "error", keyword + " failed after " + ((performance.now() - t0) / 1000).toFixed(3) + "s: " + msg);
+                    const explainTab = panel.querySelector('[data-output-tab="explain"]');
+                    if (explainTab) switchOutputTab(explainTab);
+                });
+        }
+
+        function goToPage(btn, action) {
+            const panel = btn.closest("[id^='tab-content']");            const pag = panel.querySelector(".pagination-controls");
             let page = parseInt(pag.dataset.page) || 1;
             const totalPages = parseInt(pag.dataset.totalPages) || 1;
 
