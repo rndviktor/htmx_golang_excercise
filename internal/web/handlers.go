@@ -209,6 +209,7 @@ func (s *Server) handleServerDatabases(w http.ResponseWriter, r *http.Request) {
 			Icon:  "🗄️",
 			Label: name,
 			URL:   fmt.Sprintf("/api/servers/%d/databases/%s/children", id, name),
+			Menu:  "database",
 		})
 	}
 
@@ -262,6 +263,7 @@ func (s *Server) handleDatabaseCategory(w http.ResponseWriter, r *http.Request) 
 				Icon:  "🗂️",
 				Label: name,
 				URL:   fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/children", id, dbName, name),
+				Menu:  "schema",
 			})
 		}
 		renderTree(w, nodes, cat.Empty)
