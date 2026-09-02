@@ -404,7 +404,10 @@
                     logMessage(panel, "info", keyword + " executed in " + ((performance.now() - t0) / 1000).toFixed(3) + "s");
 
                     const explainTab = panel.querySelector('[data-output-tab="explain"]');
-                    if (explainTab) switchOutputTab(explainTab);
+                    if (explainTab) {
+                        explainTab.classList.remove("hidden");
+                        switchOutputTab(explainTab);
+                    }
                 })
                 .catch(async (r) => {
                     const msg = r.body ? await r.text() : "Request failed";
@@ -412,7 +415,10 @@
                     if (status) status.textContent = keyword + " — Error";
                     logMessage(panel, "error", keyword + " failed after " + ((performance.now() - t0) / 1000).toFixed(3) + "s: " + msg);
                     const explainTab = panel.querySelector('[data-output-tab="explain"]');
-                    if (explainTab) switchOutputTab(explainTab);
+                    if (explainTab) {
+                        explainTab.classList.remove("hidden");
+                        switchOutputTab(explainTab);
+                    }
                 });
         }
 
