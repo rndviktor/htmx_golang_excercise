@@ -9,28 +9,44 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
 
 // historyItemView is the display-friendly form of a query_history row passed
-// to the template. QueryB64 holds the raw SQL base64-encoded so it can be
-// stored safely in a data attribute and decoded on click.
+// to the list template.
 type historyItemView struct {
-	QueryB64   string
-	QueryShort string
-	Executed   string
-	DurationMs sql.NullInt64
-	Status     sql.NullString
+	ID           int64
+	QueryB64     string
+	QueryShort   string
+	Executed     string
+	DurationMs   sql.NullInt64
+	Status       sql.NullString
+	RowsAffected sql.NullInt64
+	ServerID     int64
+	DBName       string
 }
 
-// handleQueryHistory renders the query history panel for one script tab.
-// The tab is identified by tab_id, and the entries are scoped to that tab's
-// connection via server_id + db_name. When tab_id is absent the panel shows
-// entries for the connection regardless of tab.
+// historyDetailView carries all fields for the detail view rendered into a
+// new tab when a history item is clicked.
+type historyDetailView struct {
+	ID           int64
+	QueryText    string
+	ExecutedAt   string
+	DurationMs   sql.NullInt64
+	Status       sql.NullString
+	RowsAffected sql.NullInt64
+	ServerID     int64
+	DBName       string
+}
+
+// handleQueryHistory renders the query history panel for a database
+// connection. All queries run on this connection are shown, regardless of
+// which script tab ran them.
 func (s *Server) handleQueryHistory(w http.ResponseWriter, r *http.Request) {
 	serverID, _ := strconv.ParseInt(r.FormValue("server_id"), 10, 64)
 	dbName := r.FormValue("db_name")
-	tabID := r.FormValue("tab_id")
 
 	connString := ""
 	if serverID > 0 && dbName != "" {
@@ -39,9 +55,7 @@ func (s *Server) handleQueryHistory(w http.ResponseWriter, r *http.Request) {
 
 	items, err := s.DB.ListQueryHistory(r.Context(), sqlite.ListQueryHistoryParams{
 		UserID:       workspaceUserID(),
-		Column2:      tabID,
-		TabID:        sql.NullString{String: tabID, Valid: tabID != ""},
-		Column4:      connString,
+		Column2:      connString,
 		ConnectionID: sql.NullString{String: connString, Valid: connString != ""},
 	})
 	if err != nil {
@@ -58,16 +72,53 @@ func (s *Server) handleQueryHistory(w http.ResponseWriter, r *http.Request) {
 			display = display[:120] + "…"
 		}
 		views = append(views, historyItemView{
-			QueryB64:   base64.RawStdEncoding.EncodeToString([]byte(it.QueryText)),
-			QueryShort: display,
-			Executed:   formatHistoryTime(it.ExecutedAt),
-			DurationMs: it.DurationMs,
-			Status:     it.Status,
+			ID:           it.ID,
+			QueryB64:     base64.RawStdEncoding.EncodeToString([]byte(it.QueryText)),
+			QueryShort:   display,
+			Executed:     formatHistoryTime(it.ExecutedAt),
+			DurationMs:   it.DurationMs,
+			Status:       it.Status,
+			RowsAffected: it.RowsAffected,
+			ServerID:     serverID,
+			DBName:       dbName,
 		})
 	}
 
 	RenderPartial(w, "query_history.html", map[string]any{
 		"Items": views,
+	})
+}
+
+// handleQueryHistoryDetail renders the full detail view for a single query
+// history entry, to be opened in a new tab.
+func (s *Server) handleQueryHistoryDetail(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id < 1 {
+		http.Error(w, "Invalid history id", http.StatusBadRequest)
+		return
+	}
+
+	serverID, _ := strconv.ParseInt(r.FormValue("server_id"), 10, 64)
+	dbName := r.FormValue("db_name")
+
+	item, err := s.DB.GetQueryHistoryByID(r.Context(), sqlite.GetQueryHistoryByIDParams{
+		ID:     id,
+		UserID: workspaceUserID(),
+	})
+	if err != nil {
+		http.Error(w, "History entry not found", http.StatusNotFound)
+		return
+	}
+
+	RenderPartial(w, "query_history_detail.html", historyDetailView{
+		ID:           item.ID,
+		QueryText:    item.QueryText,
+		ExecutedAt:   item.ExecutedAt.Time.Format("1/2/2006 3:04:05 PM"),
+		DurationMs:   item.DurationMs,
+		Status:       item.Status,
+		RowsAffected: item.RowsAffected,
+		ServerID:     serverID,
+		DBName:       dbName,
 	})
 }
 
@@ -80,9 +131,7 @@ func formatHistoryTime(t sql.NullTime) string {
 
 // recordQueryHistory persists a completed query run to the SQLite
 // query_history table so it shows up in the script window's history panel.
-// tabID ties the entry to the specific script tab it was run from, keeping
-// each tab's history independent.
-func (s *Server) recordQueryHistory(ctx context.Context, serverID int64, dbName, tabID, query string, durationMs int64) {
+func (s *Server) recordQueryHistory(ctx context.Context, serverID int64, dbName, tabID, query string, durationMs int64, rowsAffected int64) {
 	if serverID <= 0 || dbName == "" || tabID == "" || query == "" {
 		return
 	}
@@ -99,6 +148,7 @@ func (s *Server) recordQueryHistory(ctx context.Context, serverID int64, dbName,
 		QueryText:    query,
 		DurationMs:   sql.NullInt64{Int64: durationMs, Valid: true},
 		Status:       sql.NullString{String: "success", Valid: true},
+		RowsAffected: sql.NullInt64{Int64: rowsAffected, Valid: true},
 	})
 	if err != nil {
 		log.Printf("Failed to record query history: %v", err)

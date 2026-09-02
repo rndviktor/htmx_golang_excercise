@@ -386,20 +386,32 @@
                 });
         }
 
-        // Loads a history entry's SQL back into the editor, returns to the
-        // Query pane and runs it.
+        // Loads a history entry's details into the history pane.
         function useHistoryItem(panel, item) {
-            const editor = panel.querySelector("textarea[name='sql_query']");
-            if (!editor) return;
+            const id = item.dataset.historyId;
+            const serverID = item.dataset.historyServer || "";
+            const dbName = item.dataset.historyDb || "";
+            if (!id) return;
 
-            const b64 = item.dataset.historyB64;
-            if (b64) editor.value = decodeURIComponent(escape(atob(b64)));
+            const pane = panel.querySelector("#query-history-pane");
+            if (!pane) return;
 
-            const queryTab = panel.querySelector('.script-tab[data-script-tab="query"]');
-            if (queryTab) switchScriptPane(queryTab);
+            fetch("/api/query-history/" + id + "?server_id=" + serverID + "&db_name=" + dbName)
+                .then((r) => { if (!r.ok) throw r; return r.text(); })
+                .then((html) => {
+                    pane.innerHTML = html;
+                });
+        }
 
-            const execBtn = panel.querySelector("button[onclick='executeQuery(this)']");
-            if (execBtn) execBtn.click();
+        function historyBack(panel) {
+            loadQueryHistory(panel);
+        }
+
+        function copyToEditor(btn) {
+            const code = btn.closest(".border").querySelector("code").innerText;
+            const serverID = btn.dataset.serverId;
+            const dbName = btn.dataset.dbName;
+            openTab("Query", code, serverID, dbName);
         }
 
         // Generates a unique id for a newly opened script tab. GUIDs keep tab

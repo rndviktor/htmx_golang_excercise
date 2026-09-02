@@ -106,5 +106,6 @@ CREATE TABLE IF NOT EXISTS query_history (
     query_text TEXT NOT NULL,
     executed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     duration_ms INTEGER,
-    status VARCHAR(50)
+    status VARCHAR(50),
+    rows_affected INTEGER
 );

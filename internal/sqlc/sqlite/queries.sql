@@ -52,14 +52,19 @@ INSERT INTO workspace_tabs (id, user_id, title, connection_id, query_text, tab_o
 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
 
 -- name: ListQueryHistory :many
-SELECT id, user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status
+SELECT id, user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status, rows_affected
 FROM query_history
 WHERE user_id = ?
-  AND (? = '' OR tab_id = ?)
   AND (? = '' OR connection_id = ?)
 ORDER BY executed_at DESC, id DESC
 LIMIT 50;
 
+-- name: GetQueryHistoryByID :one
+SELECT id, user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status, rows_affected
+FROM query_history
+WHERE id = ? AND user_id = ?
+LIMIT 1;
+
 -- name: RecordQueryHistory :exec
-INSERT INTO query_history (user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status)
-VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?);
+INSERT INTO query_history (user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status, rows_affected)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?);

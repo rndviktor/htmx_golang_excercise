@@ -30,6 +30,7 @@ type QueryHistory struct {
 	ExecutedAt   sql.NullTime   `json:"executed_at"`
 	DurationMs   sql.NullInt64  `json:"duration_ms"`
 	Status       sql.NullString `json:"status"`
+	RowsAffected sql.NullInt64  `json:"rows_affected"`
 }
 
 type Server struct {

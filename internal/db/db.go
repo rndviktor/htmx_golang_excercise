@@ -74,6 +74,22 @@ func migrate(database *sql.DB) error {
 			return err
 		}
 	}
+
+	rows2, err := database.Query(`SELECT name FROM pragma_table_info('query_history') WHERE name = 'rows_affected'`)
+	if err != nil {
+		return err
+	}
+	exists2 := rows2.Next()
+	rows2.Close()
+	if err := rows2.Err(); err != nil {
+		return err
+	}
+	if !exists2 {
+		if _, err := database.Exec(`ALTER TABLE query_history ADD COLUMN rows_affected INTEGER`); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

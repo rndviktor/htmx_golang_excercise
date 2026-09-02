@@ -47,6 +47,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/tree", s.handleTree)
 		r.Get("/api/tabs/script-panel", s.handleScriptTabPanel)
 		r.Get("/api/query-history", s.handleQueryHistory)
+		r.Get("/api/query-history/{id}", s.handleQueryHistoryDetail)
 		r.Post("/api/execute-query", s.handleExecuteQuery)
 
 		r.Route("/api/servers", func(r chi.Router) {
@@ -532,13 +533,15 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		elapsed := time.Since(start).Seconds()
 
 		message := "OK"
+		var rowsAffected int64
 		if err != nil {
 			message = err.Error()
 		} else {
 			message = exec.String()
+			rowsAffected = exec.RowsAffected()
 		}
 
-		s.recordQueryHistory(r.Context(), serverID, dbName, tabID, query, int64(elapsed*1000))
+		s.recordQueryHistory(r.Context(), serverID, dbName, tabID, query, int64(elapsed*1000), rowsAffected)
 
 		RenderPartial(w, "query_result.html", map[string]any{
 			"Headers":    []string{},
@@ -617,7 +620,7 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 
 	elapsed := time.Since(start).Seconds()
 
-	s.recordQueryHistory(r.Context(), serverID, dbName, tabID, query, int64(elapsed*1000))
+	s.recordQueryHistory(r.Context(), serverID, dbName, tabID, query, int64(elapsed*1000), int64(total))
 
 	totalPages := (total + limit - 1) / limit
 	if totalPages < 1 {

@@ -78,6 +78,35 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 	return i, err
 }
 
+const getQueryHistoryByID = `-- name: GetQueryHistoryByID :one
+SELECT id, user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status, rows_affected
+FROM query_history
+WHERE id = ? AND user_id = ?
+LIMIT 1
+`
+
+type GetQueryHistoryByIDParams struct {
+	ID     int64         `json:"id"`
+	UserID sql.NullInt64 `json:"user_id"`
+}
+
+func (q *Queries) GetQueryHistoryByID(ctx context.Context, arg GetQueryHistoryByIDParams) (QueryHistory, error) {
+	row := q.db.QueryRowContext(ctx, getQueryHistoryByID, arg.ID, arg.UserID)
+	var i QueryHistory
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TabID,
+		&i.ConnectionID,
+		&i.QueryText,
+		&i.ExecutedAt,
+		&i.DurationMs,
+		&i.Status,
+		&i.RowsAffected,
+	)
+	return i, err
+}
+
 const getServerByID = `-- name: GetServerByID :one
 SELECT id, user_id, servergroup_id, name, host, port, maintenance_db, username, password, role, ssl_mode, comment, discovery_id, hostaddr, db_res, passfile, sslcert, keyfile, rootcert, crlfile, service, bgcolor, fgcolor, connect_timeout, use_ssh_tunnel, ssh_host, ssh_port, ssh_username, ssh_password, ssh_keyfile, shared FROM server
 WHERE id = ? AND user_id = ?
@@ -173,10 +202,9 @@ func (q *Queries) InsertWorkspaceTab(ctx context.Context, arg InsertWorkspaceTab
 }
 
 const listQueryHistory = `-- name: ListQueryHistory :many
-SELECT id, user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status
+SELECT id, user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status, rows_affected
 FROM query_history
 WHERE user_id = ?
-  AND (? = '' OR tab_id = ?)
   AND (? = '' OR connection_id = ?)
 ORDER BY executed_at DESC, id DESC
 LIMIT 50
@@ -185,19 +213,11 @@ LIMIT 50
 type ListQueryHistoryParams struct {
 	UserID       sql.NullInt64  `json:"user_id"`
 	Column2      interface{}    `json:"column_2"`
-	TabID        sql.NullString `json:"tab_id"`
-	Column4      interface{}    `json:"column_4"`
 	ConnectionID sql.NullString `json:"connection_id"`
 }
 
 func (q *Queries) ListQueryHistory(ctx context.Context, arg ListQueryHistoryParams) ([]QueryHistory, error) {
-	rows, err := q.db.QueryContext(ctx, listQueryHistory,
-		arg.UserID,
-		arg.Column2,
-		arg.TabID,
-		arg.Column4,
-		arg.ConnectionID,
-	)
+	rows, err := q.db.QueryContext(ctx, listQueryHistory, arg.UserID, arg.Column2, arg.ConnectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +234,7 @@ func (q *Queries) ListQueryHistory(ctx context.Context, arg ListQueryHistoryPara
 			&i.ExecutedAt,
 			&i.DurationMs,
 			&i.Status,
+			&i.RowsAffected,
 		); err != nil {
 			return nil, err
 		}
@@ -322,8 +343,8 @@ func (q *Queries) ListWorkspaceTabs(ctx context.Context, userID sql.NullInt64) (
 }
 
 const recordQueryHistory = `-- name: RecordQueryHistory :exec
-INSERT INTO query_history (user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status)
-VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+INSERT INTO query_history (user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status, rows_affected)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
 `
 
 type RecordQueryHistoryParams struct {
@@ -333,6 +354,7 @@ type RecordQueryHistoryParams struct {
 	QueryText    string         `json:"query_text"`
 	DurationMs   sql.NullInt64  `json:"duration_ms"`
 	Status       sql.NullString `json:"status"`
+	RowsAffected sql.NullInt64  `json:"rows_affected"`
 }
 
 func (q *Queries) RecordQueryHistory(ctx context.Context, arg RecordQueryHistoryParams) error {
@@ -343,6 +365,7 @@ func (q *Queries) RecordQueryHistory(ctx context.Context, arg RecordQueryHistory
 		arg.QueryText,
 		arg.DurationMs,
 		arg.Status,
+		arg.RowsAffected,
 	)
 	return err
 }
