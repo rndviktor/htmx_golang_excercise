@@ -42,30 +42,49 @@ func (s *Server) Routes() http.Handler {
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.RequireAuth)
+
 		r.Get("/", s.handleIndex)
 		r.Get("/api/tree", s.handleTree)
-		r.Get("/api/servers", s.handleServerList)
-		r.Get("/api/servers/new", s.handleNewServerModal)
 		r.Get("/api/tabs/script-panel", s.handleScriptTabPanel)
 		r.Get("/api/query-history", s.handleQueryHistory)
 		r.Post("/api/execute-query", s.handleExecuteQuery)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/columns", s.handleTableColumns)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/create-script", s.handleCreateScript)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/insert-script", s.handleInsertScript)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/delete-script", s.handleDeleteScript)
-		r.Post("/api/servers", s.handleAddServer)
-		r.Get("/api/servers/{serverID}/children", s.handleServerChildren)
-		r.Get("/api/servers/{serverID}/databases", s.handleServerDatabases)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/children", s.handleDatabaseChildren)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/{category}", s.handleDatabaseCategory)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/children", s.handleSchemaChildren)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/{category}", s.handleSchemaCategory)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/children", s.handleTableChildren)
-		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/{category}", s.handleTableCategory)
-		r.Get("/api/servers/{serverID}/roles", s.handleServerRoles)
-		r.Get("/api/servers/{serverID}/tablespaces", s.handleServerTablespaces)
-		r.Get("/api/workspace", s.handleWorkspaceGet)
-		r.Post("/api/workspace", s.handleWorkspaceSave)
+
+		r.Route("/api/servers", func(r chi.Router) {
+			r.Get("/", s.handleServerList)
+			r.Get("/new", s.handleNewServerModal)
+			r.Post("/", s.handleAddServer)
+
+			r.Route("/{serverID}", func(r chi.Router) {
+				r.Get("/children", s.handleServerChildren)
+				r.Get("/databases", s.handleServerDatabases)
+				r.Get("/roles", s.handleServerRoles)
+				r.Get("/tablespaces", s.handleServerTablespaces)
+
+				r.Route("/databases/{dbName}", func(r chi.Router) {
+					r.Get("/children", s.handleDatabaseChildren)
+					r.Get("/{category}", s.handleDatabaseCategory)
+
+					r.Route("/schemas/{schemaName}", func(r chi.Router) {
+						r.Get("/children", s.handleSchemaChildren)
+						r.Get("/{category}", s.handleSchemaCategory)
+
+						r.Route("/tables/{tableName}", func(r chi.Router) {
+							r.Get("/children", s.handleTableChildren)
+							r.Get("/{category}", s.handleTableCategory)
+							r.Get("/columns", s.handleTableColumns)
+							r.Get("/create-script", s.handleCreateScript)
+							r.Get("/insert-script", s.handleInsertScript)
+							r.Get("/delete-script", s.handleDeleteScript)
+						})
+					})
+				})
+			})
+		})
+
+		r.Route("/api/workspace", func(r chi.Router) {
+			r.Get("/", s.handleWorkspaceGet)
+			r.Post("/", s.handleWorkspaceSave)
+		})
 	})
 
 	return r
