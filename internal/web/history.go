@@ -152,5 +152,12 @@ func (s *Server) recordQueryHistory(ctx context.Context, serverID int64, dbName,
 	})
 	if err != nil {
 		log.Printf("Failed to record query history: %v", err)
+		return
+	}
+
+	// Notify open SSE streams for this connection so their history panels
+	// repaint without polling.
+	if s.historyHub != nil {
+		s.historyHub.notify(conn.String)
 	}
 }

@@ -26,7 +26,13 @@
                 <span id="tab-dashboard-icon">📊</span>
                 <span id="tab-dashboard-label">Dashboard</span>
             </button>
-            <!-- Additional tabs can be appended here dynamically -->
+            <button onclick="toggleHistoryPanel()"
+                    id="history-toggle"
+                    class="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 m-1 text-gray-300 hover:text-blue-400 hover:bg-gray-700 rounded transition"
+                    title="Toggle Query History">
+                <span id="history-toggle-icon">🕘</span>
+                <span id="history-toggle-label" class="hidden">History</span>
+            </button>
         </div>
 
         <!-- Tab Content Panels -->
@@ -41,6 +47,13 @@
 
         </div>
 
+    </div>
+
+    <!-- Query History (VS Code chat-area style right panel) -->
+    <div id="history-panel"
+         class="hidden flex shrink-0 flex-col bg-gray-800 border-l border-gray-700 text-gray-200 overflow-hidden"
+         style="width: 360px;">
+        <div id="query-history-pane" class="flex-1 overflow-auto"></div>
     </div>
 </div>
 

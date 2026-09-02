@@ -38,12 +38,6 @@
                 class="script-tab px-3 py-1 text-gray-200 font-semibold border-r border-gray-700 cursor-pointer">
           Query
         </button>
-        <button type="button"
-                data-script-tab="history"
-                onclick="switchScriptPane(this)"
-                class="script-tab px-3 py-1 hover:text-gray-200 border-r border-gray-700 cursor-pointer">
-          Query History
-        </button>
       </div>
       <form id="query-editor" class="script-pane flex-1 m-0" data-pane="query" onsubmit="return false;">
         <textarea
@@ -51,7 +45,6 @@
           class="w-full h-full border-none outline-none font-mono text-sm p-2 box-border bg-gray-900 text-gray-200 placeholder-gray-500"
           placeholder="Enter SQL here..."></textarea>
       </form>
-      <div id="query-history-pane" class="script-pane flex-1 overflow-auto hidden" data-pane="history"></div>
     </div>
 
     <!-- Right Scratch Pad Pane -->

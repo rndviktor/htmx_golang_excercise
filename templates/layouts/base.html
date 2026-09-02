@@ -207,6 +207,10 @@
             });
             activeTabId = id;
             updateMonitoringForActiveTab();
+            if (historyPanelOpen) {
+                loadQueryHistory();
+                openHistoryStream();
+            }
         }
 
         // Monitoring only polls while the Dashboard tab is active. Switching to
@@ -450,24 +454,90 @@
             panel.querySelectorAll(".script-pane").forEach((p) => {
                 p.classList.toggle("hidden", p.dataset.pane !== name);
             });
-
-            if (name === "history") loadQueryHistory(panel);
         }
 
-        // Loads the query history list for this panel's connection into the
-        // history pane, unless it has already been fetched.
-        function loadQueryHistory(panel) {
-            const pane = panel.querySelector("#query-history-pane");
-            if (!pane) return;
+        // VS Code-style right-hand history panel. The button toggles the panel
+        // open/closed and re-labels the tab button.
+        let historyPanelOpen = false;
+        let historyDetailOpen = false;
+        let historySource = null;
 
-            const form = panel.querySelector("#query-editor");
-            const sid = form ? form.querySelector("input[name='server_id']") : null;
-            const db = form ? form.querySelector("input[name='db_name']") : null;
+        function toggleHistoryPanel() {
+            historyPanelOpen = !historyPanelOpen;
+            const panel = document.getElementById("history-panel");
+            const btn = document.getElementById("history-toggle");
+            const label = document.getElementById("history-toggle-label");
+            if (panel) panel.classList.toggle("hidden", !historyPanelOpen);
+            if (label) label.classList.toggle("hidden", !historyPanelOpen);
+            if (btn) btn.classList.toggle("text-blue-400", historyPanelOpen);
+
+            if (historyPanelOpen) {
+                loadQueryHistory();
+                openHistoryStream();
+            } else {
+                closeHistoryStream();
+            }
+        }
+
+        // Subscribes to SSE updates for the current connection so new history
+        // rows repaint the panel without polling. Reconnects if the connection
+        // changes while open.
+        function openHistoryStream() {
+            if (!historyPanelOpen) return;
+            closeHistoryStream();
+            const conn = currentHistoryConnection();
+            if (!conn) return;
+            const src = new EventSource(
+                "/api/query-history/stream?server_id=" + encodeURIComponent(conn.serverID) +
+                "&db_name=" + encodeURIComponent(conn.dbName));
+            src.onmessage = () => {
+                // Only repaint the list, leaving a detail view untouched.
+                if (!historyPanelOpen || historyDetailOpen) return;
+                loadQueryHistory();
+            };
+            // EventSource auto-reconnects on error; leave it be.
+            historySource = src;
+        }
+
+        function closeHistoryStream() {
+            if (historySource) { historySource.close(); historySource = null; }
+        }
+
+        // Resolves the connection to scope the history panel to: the active
+        // script tab if one exists, otherwise the current tree selection.
+        function currentHistoryConnection() {
+            const activePanel = document.getElementById("tab-content-" + activeTabId);
+            if (activePanel) {
+                const form = activePanel.querySelector("#query-editor");
+                if (form) {
+                    const sid = form.querySelector("input[name='server_id']");
+                    const db = form.querySelector("input[name='db_name']");
+                    if (sid && sid.value && db && db.value) {
+                        return { serverID: sid.value, dbName: db.value };
+                    }
+                }
+            }
+            if (monitoringConn) return { serverID: String(monitoringConn.serverID), dbName: monitoringConn.dbName };
+            return null;
+        }
+
+        // Loads the query history list for the current connection into the
+        // global history panel.
+        function loadQueryHistory() {
+            const pane = document.getElementById("query-history-pane");
+            if (!pane) return;
+            historyDetailOpen = false;
+
+            const conn = currentHistoryConnection();
+            if (!conn) {
+                pane.innerHTML = '<div class="p-3 text-xs text-gray-500 italic">Select a database to view query history.</div>';
+                return;
+            }
 
             const params = new URLSearchParams();
-            if (sid) params.set("server_id", sid.value);
-            if (db) params.set("db_name", db.value);
-            params.set("tab_id", panelTabId(panel));
+            params.set("server_id", conn.serverID);
+            params.set("db_name", conn.dbName);
+            params.set("tab_id", "");
 
             pane.innerHTML = '<div class="p-3 text-xs text-gray-500 italic">Loading…</div>';
 
@@ -476,23 +546,24 @@
                 .then((html) => {
                     pane.innerHTML = html;
                     pane.querySelectorAll(".history-item").forEach((item) => {
-                        item.addEventListener("click", () => useHistoryItem(panel, item));
+                        item.addEventListener("click", () => useHistoryItem(item));
                     });
                 })
-                .catch((r) => {
+                .catch(() => {
                     pane.innerHTML = '<div class="p-3 text-xs text-red-400">Failed to load query history.</div>';
                 });
         }
 
-        // Loads a history entry's details into the history pane.
-        function useHistoryItem(panel, item) {
+        // Loads a history entry's details into the history panel.
+        function useHistoryItem(item) {
             const id = item.dataset.historyId;
             const serverID = item.dataset.historyServer || "";
             const dbName = item.dataset.historyDb || "";
             if (!id) return;
 
-            const pane = panel.querySelector("#query-history-pane");
+            const pane = document.getElementById("query-history-pane");
             if (!pane) return;
+            historyDetailOpen = true;
 
             fetch("/api/query-history/" + id + "?server_id=" + serverID + "&db_name=" + dbName)
                 .then((r) => { if (!r.ok) throw r; return r.text(); })
@@ -501,8 +572,8 @@
                 });
         }
 
-        function historyBack(panel) {
-            loadQueryHistory(panel);
+        function historyBack() {
+            loadQueryHistory();
         }
 
         function copyToEditor(btn) {
@@ -557,7 +628,12 @@
                 if (e.target.textContent === "✕") return;
                 switchTab(id);
             });
-            document.getElementById("tab-bar").appendChild(btn);
+            const tabBar = document.getElementById("tab-bar");
+            const historyToggle = document.getElementById("history-toggle");
+            // Insert before the history toggle so content tabs stay on the left
+            // and the history button always remains right-aligned.
+            if (historyToggle) tabBar.insertBefore(btn, historyToggle);
+            else tabBar.appendChild(btn);
 
             // Create content panel and fetch its content from the server
             const panel = document.createElement("div");

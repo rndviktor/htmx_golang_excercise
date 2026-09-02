@@ -20,8 +20,9 @@ import (
 )
 
 type Server struct {
-	DB       *sqlite.Queries
-	sqliteDB *sql.DB
+	DB         *sqlite.Queries
+	sqliteDB   *sql.DB
+	historyHub *historyHub
 }
 
 func NewServer() (*Server, error) {
@@ -30,7 +31,7 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{DB: queries, sqliteDB: database}, nil
+	return &Server{DB: queries, sqliteDB: database, historyHub: newHistoryHub()}, nil
 }
 
 func (s *Server) Routes() http.Handler {
@@ -47,6 +48,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/tree", s.handleTree)
 		r.Get("/api/tabs/script-panel", s.handleScriptTabPanel)
 		r.Get("/api/query-history", s.handleQueryHistory)
+		r.Get("/api/query-history/stream", s.handleHistoryStream)
 		r.Get("/api/query-history/{id}", s.handleQueryHistoryDetail)
 		r.Post("/api/execute-query", s.handleExecuteQuery)
 
