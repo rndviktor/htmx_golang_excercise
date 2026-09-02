@@ -58,15 +58,20 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	var b strings.Builder
 	qualified := qualIdent(schemaName, tableName)
 
-	b.WriteString("-- Table: " + qualified + "\n\n")
-	b.WriteString("-- DROP TABLE IF EXISTS " + qualified + ";\n\n")
-	b.WriteString("CREATE TABLE IF NOT EXISTS " + qualified + "\n(\n")
+	b.WriteString("-- Table: ")
+	b.WriteString(qualified)
+	b.WriteString("\n\n-- DROP TABLE IF EXISTS ")
+	b.WriteString(qualified)
+	b.WriteString(";\n\nCREATE TABLE IF NOT EXISTS ")
+	b.WriteString(qualified)
+	b.WriteString("\n(\n")
 
 	for i, col := range cols {
 		if i > 0 {
 			b.WriteString(",\n")
 		}
-		b.WriteString("    " + columnLine(col))
+		b.WriteString("    ")
+		b.WriteString(columnLine(col))
 	}
 
 	if len(pkRows) > 0 {
@@ -77,16 +82,23 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		for _, r := range pkRows {
 			names = append(names, quoteIfNeeded(r.Attname))
 		}
-		b.WriteString("    CONSTRAINT " + quoteIfNeeded(pkRows[0].Conname) +
-			" PRIMARY KEY (" + strings.Join(names, ", ") + ")")
+		b.WriteString("    CONSTRAINT ")
+		b.WriteString(quoteIfNeeded(pkRows[0].Conname))
+		b.WriteString(" PRIMARY KEY (")
+		b.WriteString(strings.Join(names, ", "))
+		b.WriteString(")")
 	}
 
-	b.WriteString("\n)\n\n")
-	b.WriteString("TABLESPACE " + quoteIfNeeded(tablespace) + ";\n\n")
+	b.WriteString("\n)\n\nTABLESPACE ")
+	b.WriteString(quoteIfNeeded(tablespace))
+	b.WriteString(";\n\n")
 
 	if owner != "" {
-		b.WriteString("ALTER TABLE IF EXISTS " + qualified + "\n")
-		b.WriteString("    OWNER to " + quoteIfNeeded(owner) + ";")
+		b.WriteString("ALTER TABLE IF EXISTS ")
+		b.WriteString(qualified)
+		b.WriteString("\n    OWNER to ")
+		b.WriteString(quoteIfNeeded(owner))
+		b.WriteString(";")
 	}
 
 	w.Header().Set("Content-Type", "application/json")
