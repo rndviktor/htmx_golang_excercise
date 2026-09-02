@@ -52,6 +52,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/columns", s.handleTableColumns)
 		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/create-script", s.handleCreateScript)
 		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/insert-script", s.handleInsertScript)
+		r.Get("/api/servers/{serverID}/databases/{dbName}/schemas/{schemaName}/tables/{tableName}/delete-script", s.handleDeleteScript)
 		r.Post("/api/servers", s.handleAddServer)
 		r.Get("/api/servers/{serverID}/children", s.handleServerChildren)
 		r.Get("/api/servers/{serverID}/databases", s.handleServerDatabases)

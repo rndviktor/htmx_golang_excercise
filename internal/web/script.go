@@ -93,6 +93,21 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"query": b.String()})
 }
 
+// handleDeleteScript generates a skeleton DELETE statement for a table and
+// returns it as JSON {query: "..."} so the client can open a new script tab
+// pre-filled with it.
+func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
+	_, _, _, schemaName, tableName, ok := s.loadTablePool(w, r)
+	if !ok {
+		return
+	}
+
+	query := "DELETE FROM " + qualIdent(schemaName, tableName) + "\n\tWHERE <condition>;"
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"query": query})
+}
+
 // handleInsertScript generates a skeleton INSERT statement for a table and
 // returns it as JSON {query: "..."} so the client can open a new script tab
 // pre-filled with it. Values are the column names as placeholders, matching
