@@ -9,7 +9,7 @@
     </button>
   </div>
 
-  <div class="flex-1 overflow-auto p-3 bg-gray-900 text-sm text-gray-800 font-sans">
+  <div class="flex-1 overflow-auto p-3 bg-gray-900 text-sm text-gray-200 font-sans">
 
     <!-- Header Metadata Grid -->
     <div class="grid grid-cols-3 gap-4 mb-3">
@@ -28,14 +28,14 @@
     </div>
 
     <!-- SQL Code Box with Action Buttons -->
-    <div class="border border-gray-300 rounded bg-white overflow-hidden mb-3">
+    <div class="border border-gray-700 rounded bg-gray-800 overflow-hidden mb-3">
 
       <!-- Action Toolbar -->
-      <div class="flex border-b border-gray-200 bg-gray-50 text-xs">
+      <div class="flex border-b border-gray-700 bg-gray-800 text-xs">
         <button
           type="button"
           onclick="navigator.clipboard.writeText(this.closest('.border').querySelector('code').innerText)"
-          class="px-3 py-1.5 border-r border-gray-200 hover:bg-gray-100 text-gray-700 font-medium transition-colors">
+          class="px-3 py-1.5 border-r border-gray-700 hover:bg-gray-700 text-blue-400 hover:text-blue-300 font-medium transition-colors">
           Copy
         </button>
         <button
@@ -43,13 +43,13 @@
           onclick="copyToEditor(this)"
           data-server-id="{{ .ServerID }}"
           data-db-name="{{ .DBName }}"
-          class="px-3 py-1.5 hover:bg-gray-100 text-gray-700 font-medium transition-colors">
+          class="px-3 py-1.5 hover:bg-gray-700 text-blue-400 hover:text-blue-300 font-medium transition-colors">
           Copy to Query Editor
         </button>
       </div>
 
       <!-- SQL Code View -->
-      <pre class="p-3 m-0 bg-white overflow-x-auto text-xs font-mono leading-relaxed"><code class="language-sql">{{ .QueryText }}</code></pre>
+      <pre class="p-3 m-0 bg-gray-800 overflow-x-auto text-xs font-mono leading-relaxed text-gray-200"><code class="language-sql">{{ .QueryText }}</code></pre>
     </div>
 
     <!-- Execution Messages -->
