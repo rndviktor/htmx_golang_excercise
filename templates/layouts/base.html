@@ -219,10 +219,12 @@
         function updateMonitoringForActiveTab() {
             if (activeTabId !== "dashboard") {
                 if (monitoringTimer) { clearInterval(monitoringTimer); monitoringTimer = null; }
+                closeMonitoringKPIStream();
                 return;
             }
             if (monitoringConn && monitoringBaseURL) {
                 pollMonitoring();
+                openMonitoringKPIStream();
             }
         }
 
@@ -947,6 +949,8 @@
         let monitoringBaseURL = null;
         let monitoringInitialized = false;
         let monitoringConn = null;
+        let monitoringSource = null;
+        let monitoringInterval = 5000;
         let activeTabId = "dashboard";
         let monitoringState = {
             blksHit: 0, blksRead: 0,
@@ -1161,6 +1165,27 @@
             }
         }
 
+        // Opens the SSE KPI stream for the current connection so KPI cards update
+        // instantly between the 5s chart polls. Only runs while the Dashboard
+        // tab is active.
+        function openMonitoringKPIStream() {
+            closeMonitoringKPIStream();
+            if (!monitoringConn || activeTabId !== "dashboard") return;
+            const src = new EventSource(
+                "/api/servers/" + encodeURIComponent(monitoringConn.serverID) +
+                "/databases/" + encodeURIComponent(monitoringConn.dbName) + "/monitoring/stream");
+            src.onmessage = (e) => {
+                let data;
+                try { data = JSON.parse(e.data); } catch (_) { return; }
+                updateKPIs(data);
+            };
+            monitoringSource = src;
+        }
+
+        function closeMonitoringKPIStream() {
+            if (monitoringSource) { monitoringSource.close(); monitoringSource = null; }
+        }
+
         function startMonitoring(serverID, dbName) {
             monitoringBaseURL = "/api/servers/" + serverID + "/databases/" + dbName + "/monitoring";
             monitoringConn = { serverID: serverID, dbName: dbName };
@@ -1178,25 +1203,34 @@
             if (monView) monView.classList.remove("hidden");
             const label = document.getElementById("monitoring-conn-label");
             if (label) label.textContent = dbName + " (server " + serverID + ")";
-            document.getElementById("monitoring-refresh-label").textContent = "Refreshing every 5s";
 
-            // Initial render, then poll only while the Dashboard tab is active.
+            // Initial render, then poll charts while the Dashboard tab is active.
             renderMonitoringCharts();
             if (activeTabId !== "dashboard") return;
             pollMonitoring();
+            openMonitoringKPIStream();
         }
 
         function pollMonitoring() {
             if (!monitoringBaseURL) return;
             refreshMonitoring();
             if (monitoringTimer) clearInterval(monitoringTimer);
-            monitoringTimer = setInterval(refreshMonitoring, 5000);
+            monitoringTimer = setInterval(refreshMonitoring, monitoringInterval);
+        }
+
+        // Sets the chart polling interval (ms) and restarts the timer live.
+        function setMonitoringInterval(val) {
+            const ms = parseInt(val, 10);
+            if (isNaN(ms) || ms < 1000) return;
+            monitoringInterval = ms;
+            if (monitoringTimer && monitoringBaseURL) pollMonitoring();
         }
 
         function stopMonitoring() {
             if (monitoringTimer) { clearInterval(monitoringTimer); monitoringTimer = null; }
             monitoringBaseURL = null;
             monitoringConn = null;
+            closeMonitoringKPIStream();
             setDashboardTabLabel(false);
             const defaultView = document.getElementById("dashboard-default");
             const monView = document.getElementById("dashboard-monitoring");

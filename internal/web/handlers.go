@@ -67,6 +67,7 @@ func (s *Server) Routes() http.Handler {
 					r.Get("/children", s.handleDatabaseChildren)
 					r.Get("/{category}", s.handleDatabaseCategory)
 					r.Get("/monitoring", s.handleMonitoring)
+					r.Get("/monitoring/stream", s.handleMonitoringStream)
 
 					r.Route("/schemas/{schemaName}", func(r chi.Router) {
 						r.Get("/children", s.handleSchemaChildren)

@@ -1,12 +1,14 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -160,4 +162,135 @@ func queryMonitoring(r *http.Request, pool *pgxpool.Pool) (*monitoringResponse, 
 	}
 
 	return resp, nil
+}
+
+// queryKPIs returns only the instant KPI fields (not the cumulative counters
+// used for deltas). It backs the monitoring SSE stream so KPI cards update
+// between chart samples without recomputing the heavy full snapshot.
+func queryKPIs(ctx context.Context, pool *pgxpool.Pool) (*monitoringResponse, error) {
+	resp := &monitoringResponse{}
+
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM pg_stat_activity").
+		Scan(&resp.ActiveConnections); err != nil {
+		return nil, err
+	}
+
+	var maxConn string
+	if qerr := pool.QueryRow(ctx, "SHOW max_connections").Scan(&maxConn); qerr != nil {
+		return nil, qerr
+	}
+	parsed, perr := strconv.ParseInt(strings.TrimSpace(maxConn), 10, 64)
+	if perr != nil {
+		return nil, fmt.Errorf("parse max_connections %q: %w", maxConn, perr)
+	}
+	resp.MaxConnections = parsed
+
+	if err := pool.QueryRow(ctx, "SELECT pg_database_size(current_database())").
+		Scan(&resp.DatabaseSizeBytes); err != nil {
+		return nil, err
+	}
+
+	rows, err := pool.Query(ctx, `
+		SELECT COALESCE(state, 'unknown') AS state, count(*)
+		FROM pg_stat_activity
+		WHERE state <> 'active' OR state IS NULL
+		GROUP BY state`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var state string
+		var cnt int64
+		if err := rows.Scan(&state, &cnt); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		switch state {
+		case "idle":
+			resp.IdleCount += cnt
+		case "idle in transaction":
+			resp.IdleTxCount += cnt
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM pg_stat_activity WHERE state = 'active'`).
+		Scan(&resp.ActiveTxCount); err != nil {
+		return nil, err
+	}
+
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'`).
+		Scan(&resp.BlockedQueries); err != nil {
+		return nil, err
+	}
+
+	var lagBytes *int64
+	err = pool.QueryRow(ctx, `
+		SELECT pg_wal_lsn_diff(sent_lsn, replay_lsn)::bigint
+		FROM pg_stat_replication`).Scan(&lagBytes)
+	if err == nil {
+		resp.HasReplication = true
+		if lagBytes != nil {
+			resp.ReplicationLagBytes = *lagBytes
+		}
+	}
+
+	return resp, nil
+}
+
+// handleMonitoringStream is the SSE endpoint for instant KPI values. While the
+// client keeps the connection open it pushes a KPI snapshot every refreshMs
+// (default 2s), letting the KPI cards update without polling. Cumulative
+// counters are left zero; the frontend only feeds these into KPI DOM updates.
+func (s *Server) handleMonitoringStream(w http.ResponseWriter, r *http.Request) {
+	pool, _, _, ok := s.loadDatabasePool(w, r)
+	if !ok {
+		return
+	}
+
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	if _, err := w.Write([]byte(": connected\n\n")); err != nil {
+		return
+	}
+	fl.Flush()
+
+	ctx := r.Context()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			resp, err := queryKPIs(ctx, pool)
+			if err != nil {
+				// Keep the stream alive; retry next tick.
+				continue
+			}
+			data, err := json.Marshal(resp)
+			if err != nil {
+				continue
+			}
+			if _, err := w.Write(append([]byte("data: "), append(data, byte('\n'), byte('\n'))...)); err != nil {
+				return
+			}
+			fl.Flush()
+		}
+	}
 }
