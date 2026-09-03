@@ -52,6 +52,12 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/query-history/{id}", s.handleQueryHistoryDetail)
 		r.Post("/api/execute-query", s.handleExecuteQuery)
 
+		r.Get("/api/sessions", s.handleSessions)
+		r.Post("/api/sessions/{pid}/cancel", s.handleSessionCancel)
+		r.Delete("/api/sessions/{pid}", s.handleSessionTerminate)
+		r.Get("/api/locks", s.handleLocks)
+		r.Get("/api/prepared-transactions", s.handlePreparedTransactions)
+
 		r.Route("/api/servers", func(r chi.Router) {
 			r.Get("/", s.handleServerList)
 			r.Get("/new", s.handleNewServerModal)

@@ -958,7 +958,7 @@
             inserts: 0, updates: 0, deletes: 0,
         };
         const chartSeries = {
-            cacheHit: [], replication: [], tps: [], ins: [], upd: [], del: [], time: [], sessions: [],
+            cacheHit: [], replication: [], tps: [], ins: [], upd: [], del: [], time: [],
         };
         let charts = {};
 
@@ -1028,12 +1028,6 @@
                 { label: "Deletes/s", data: chartSeries.del, borderColor: "#ef4444", tension: 0.3, pointRadius: 0 },
             ]);
 
-            // Session states (doughnut / bar).
-            makeChart("chart-sessions", "bar", ["Active", "Idle Tx", "Idle"], [{
-                label: "Sessions",
-                data: chartSeries.sessions,
-                backgroundColor: ["#22c55e", "#eab308", "#3b82f6"],
-            }]);
         }
 
         function updateKPIs(data) {
@@ -1091,8 +1085,10 @@
                         monitoringState.inserts = data.inserts;
                         monitoringState.updates = data.updates;
                         monitoringState.deletes = data.deletes;
-                        chartSeries.sessions = [data.activeTx, data.idleTx, data.idle];
                         renderMonitoringCharts();
+                        if (typeof refreshSessions === 'function') refreshSessions();
+                        if (typeof refreshLocks === 'function') refreshLocks();
+                        if (typeof refreshPrepared === 'function') refreshPrepared();
                         return;
                     }
 
@@ -1126,7 +1122,9 @@
                         data.hasReplication ? data.replicationLagBytes : 0);
 
                     // Sessions breakdown (latest snapshot).
-                    chartSeries.sessions = [data.activeTx, data.idleTx, data.idle];
+                    if (typeof refreshSessions === 'function') refreshSessions();
+                    if (typeof refreshLocks === 'function') refreshLocks();
+                    if (typeof refreshPrepared === 'function') refreshPrepared();
 
                     // Keep a rolling window of ~30 points.
                     chartSeries.time.push(new Date().toLocaleTimeString());

@@ -134,12 +134,284 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 mb-6">
-        <!-- Sessions breakdown (bar) -->
-        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Session States</h3>
-            <div class="h-56"><canvas id="chart-sessions"></canvas></div>
+    <!-- 3. Sessions / Locks / Prepared Transactions -->
+    <div class="space-y-4 mb-6">
+
+        <!-- ===== SESSIONS SECTION ===== -->
+        <div id="sessions-section" class="border border-gray-700 rounded bg-gray-800 shadow-sm overflow-hidden">
+            <div class="bg-gray-700/50 border-b border-gray-700 px-3 py-2 text-xs font-semibold text-gray-400">
+                Sessions
+            </div>
+            <div class="p-2 flex flex-wrap items-center justify-between gap-2 text-xs border-b border-gray-700 bg-gray-800">
+                <label class="inline-flex items-center gap-1.5 cursor-pointer text-gray-300">
+                    <input type="checkbox" name="active_only" value="true"
+                           class="rounded border-gray-600 text-blue-500 focus:ring-blue-500 h-3.5 w-3.5 bg-gray-700">
+                    <span>Active sessions only</span>
+                </label>
+                <div class="relative w-64">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </span>
+                    <input type="search" name="session_search" placeholder="Search"
+                           class="w-full pl-7 pr-2 py-1 border border-gray-600 rounded text-xs bg-gray-700 text-gray-300 focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-gray-300 border-collapse">
+                    <thead class="bg-gray-700/50 border-b border-gray-700 text-gray-400 font-semibold select-none">
+                        <tr>
+                            <th class="p-2 border-r border-gray-700 w-8 text-center"></th>
+                            <th class="p-2 border-r border-gray-700 w-8 text-center"></th>
+                            <th class="p-2 border-r border-gray-700 w-8 text-center"></th>
+                            <th class="p-2 border-r border-gray-700">PID</th>
+                            <th class="p-2 border-r border-gray-700">User</th>
+                            <th class="p-2 border-r border-gray-700">Application</th>
+                            <th class="p-2 border-r border-gray-700">Client</th>
+                            <th class="p-2 border-r border-gray-700">Backend start</th>
+                            <th class="p-2 border-r border-gray-700">Transaction start</th>
+                            <th class="p-2 border-r border-gray-700">State</th>
+                            <th class="p-2 border-r border-gray-700">Wait event</th>
+                            <th class="p-2">Blocking PIDs</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessions-tbody" class="divide-y divide-gray-700/50 font-mono text-[11px]">
+                        <tr><td colspan="12" class="py-6 text-center text-gray-500 font-sans text-xs">Loading sessions...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
+
+        <!-- ===== LOCKS SECTION ===== -->
+        <div id="locks-section" class="border border-gray-700 rounded bg-gray-800 shadow-sm overflow-hidden">
+            <div class="bg-gray-700/50 border-b border-gray-700 px-3 py-2 text-xs font-semibold text-gray-400">
+                Locks
+            </div>
+            <div class="p-2 flex items-center justify-end border-b border-gray-700 bg-gray-800">
+                <div class="relative w-64">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </span>
+                    <input type="search" name="locks_search" placeholder="Search"
+                           class="w-full pl-7 pr-2 py-1 border border-gray-600 rounded text-xs bg-gray-700 text-gray-300 focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-gray-300 border-collapse">
+                    <thead class="bg-gray-700/50 border-b border-gray-700 text-gray-400 font-semibold select-none">
+                        <tr>
+                            <th class="p-2 border-r border-gray-700">PID</th>
+                            <th class="p-2 border-r border-gray-700">Lock type</th>
+                            <th class="p-2 border-r border-gray-700">Target relation</th>
+                            <th class="p-2 border-r border-gray-700">Page</th>
+                            <th class="p-2 border-r border-gray-700">Tuple</th>
+                            <th class="p-2 border-r border-gray-700">vXID (target)</th>
+                            <th class="p-2 border-r border-gray-700">XID (target)</th>
+                            <th class="p-2 border-r border-gray-700">Class</th>
+                            <th class="p-2 border-r border-gray-700">Object ID</th>
+                            <th class="p-2 border-r border-gray-700">vXID (owner)</th>
+                            <th class="p-2 border-r border-gray-700">Mode</th>
+                            <th class="p-2">Granted?</th>
+                        </tr>
+                    </thead>
+                    <tbody id="locks-tbody" class="divide-y divide-gray-700/50 font-mono text-[11px]">
+                        <tr><td colspan="12" class="py-6 text-center text-gray-500 font-sans text-xs">Loading locks...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ===== PREPARED TRANSACTIONS SECTION ===== -->
+        <div id="prepared-section" class="border border-gray-700 rounded bg-gray-800 shadow-sm overflow-hidden">
+            <div class="bg-gray-700/50 border-b border-gray-700 px-3 py-2 text-xs font-semibold text-gray-400">
+                Prepared Transactions
+            </div>
+            <div class="p-2 flex items-center justify-end border-b border-gray-700 bg-gray-800">
+                <div class="relative w-64">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </span>
+                    <input type="search" name="prepared_search" placeholder="Search"
+                           class="w-full pl-7 pr-2 py-1 border border-gray-600 rounded text-xs bg-gray-700 text-gray-300 focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-gray-300 border-collapse">
+                    <thead class="bg-gray-700/50 border-b border-gray-700 text-gray-400 font-semibold select-none">
+                        <tr>
+                            <th class="p-2 border-r border-gray-700">Name</th>
+                            <th class="p-2 border-r border-gray-700">Owner</th>
+                            <th class="p-2 border-r border-gray-700">XID</th>
+                            <th class="p-2">Prepared at</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactions-tbody" class="divide-y divide-gray-700/50 font-mono text-[11px]">
+                        <tr><td colspan="4" class="py-6 text-center text-gray-500 font-sans text-xs">Loading prepared transactions...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
+
+    <!-- Sessions/Locks/Prepared Transactions JavaScript -->
+    <script>
+    (function() {
+        function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
+        function empty(msg) { return '<tr><td colspan="12" class="py-6 text-center text-gray-500 font-sans text-xs">' + esc(msg) + '</td></tr>'; }
+
+        function renderSessions(data, tbody) {
+            if (!data || !data.length) { tbody.innerHTML = empty('No sessions found'); return; }
+            var h = '';
+            data.forEach(function(r) {
+                h += '<tr class="hover:bg-gray-700/50">';
+                h += '<td class="p-1 border-r border-gray-700 text-center"><button onclick="cancelSession(' + r.pid + ')" class="text-gray-500 hover:text-blue-400" title="Cancel query"><svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button></td>';
+                h += '<td class="p-1 border-r border-gray-700 text-center"><button onclick="terminateSession(' + r.pid + ')" class="text-gray-500 hover:text-red-400" title="Terminate backend"><svg class="w-3 h-3 inline" fill="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"></rect></svg></button></td>';
+                h += '<td class="p-1 border-r border-gray-700 text-center text-gray-600"><svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.pid) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans">' + esc(r.usename) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans">' + esc(r.application_name) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.client_addr) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.backend_start) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.xact_start) + '</td>';
+                var stateColor = r.state === 'active' ? 'text-green-400' : r.state === 'idle in transaction' ? 'text-yellow-400' : 'text-gray-300';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans ' + stateColor + '">' + esc(r.state) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans">' + esc(r.wait_event_type && r.wait_event ? r.wait_event_type + ': ' + r.wait_event : '') + '</td>';
+                h += '<td class="p-1.5">' + esc(r.blocking_pids) + '</td>';
+                h += '</tr>';
+            });
+            tbody.innerHTML = h;
+        }
+
+        function renderLocks(data, tbody) {
+            if (!data || !data.length) { tbody.innerHTML = empty('No locks found'); return; }
+            var h = '';
+            data.forEach(function(r) {
+                h += '<tr class="hover:bg-gray-700/50">';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.pid) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans">' + esc(r.locktype) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans">' + esc(r.relation) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.page) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.tuple) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.virtual_transaction_id) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.transaction_id) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.classid) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.objid) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.virtual_xid_owner) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans">' + esc(r.mode) + '</td>';
+                var grantedColor = r.granted === 'true' || r.granted === true ? 'text-green-400' : 'text-red-400';
+                h += '<td class="p-1.5 font-sans ' + grantedColor + '">' + esc(String(r.granted)) + '</td>';
+                h += '</tr>';
+            });
+            tbody.innerHTML = h;
+        }
+
+        function renderPrepared(data, tbody) {
+            if (!data || !data.length) { tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-gray-500 font-sans text-xs"><div class="flex items-center justify-center gap-2"><svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span class="text-xs text-gray-400">No rows found</span></div></td></tr>'; return; }
+            var h = '';
+            data.forEach(function(r) {
+                h += '<tr class="hover:bg-gray-700/50">';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans">' + esc(r.name) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700 font-sans">' + esc(r.owner) + '</td>';
+                h += '<td class="p-1.5 border-r border-gray-700">' + esc(r.xid) + '</td>';
+                h += '<td class="p-1.5">' + esc(r.prepared_at) + '</td>';
+                h += '</tr>';
+            });
+            tbody.innerHTML = h;
+        }
+
+        function getDBParams() {
+            if (typeof monitoringConn !== 'undefined' && monitoringConn) {
+                return 'server_id=' + encodeURIComponent(monitoringConn.serverID) + '&db_name=' + encodeURIComponent(monitoringConn.dbName);
+            }
+            return '';
+        }
+        function getSessionParams() {
+            var p = getDBParams();
+            var cb = document.querySelector('#sessions-section input[name="active_only"]');
+            var q = document.querySelector('#sessions-section input[name="session_search"]');
+            if (cb && cb.checked) p += '&active_only=true';
+            if (q && q.value) p += '&search=' + encodeURIComponent(q.value);
+            return p;
+        }
+        function getLocksParams() {
+            var p = getDBParams();
+            var q = document.querySelector('#locks-section input[name="locks_search"]');
+            if (q && q.value) p += '&search=' + encodeURIComponent(q.value);
+            return p;
+        }
+        function getPreparedParams() {
+            var p = getDBParams();
+            var q = document.querySelector('#prepared-section input[name="prepared_search"]');
+            if (q && q.value) p += '&search=' + encodeURIComponent(q.value);
+            return p;
+        }
+
+        window.refreshSessions = function() {
+            var p = getSessionParams(); if (!p) return;
+            fetch('/api/sessions?' + p, { credentials: 'same-origin' })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t || r.status); });
+                    return r.json();
+                })
+                .then(function(d) { renderSessions(d, document.getElementById('sessions-tbody')); })
+                .catch(function(e) { document.getElementById('sessions-tbody').innerHTML = empty('Failed to load sessions: ' + (e.message || e)); });
+        };
+
+        window.refreshLocks = function() {
+            var p = getLocksParams(); if (!p) return;
+            fetch('/api/locks?' + p, { credentials: 'same-origin' })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t || r.status); });
+                    return r.json();
+                })
+                .then(function(d) { renderLocks(d, document.getElementById('locks-tbody')); })
+                .catch(function(e) { document.getElementById('locks-tbody').innerHTML = empty('Failed to load locks: ' + (e.message || e)); });
+        };
+
+        window.refreshPrepared = function() {
+            var p = getPreparedParams(); if (!p) return;
+            fetch('/api/prepared-transactions?' + p, { credentials: 'same-origin' })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t || r.status); });
+                    return r.json();
+                })
+                .then(function(d) { renderPrepared(d, document.getElementById('transactions-tbody')); })
+                .catch(function(e) { document.getElementById('transactions-tbody').innerHTML = empty('Failed to load prepared transactions: ' + (e.message || e)); });
+        };
+
+        window.cancelSession = function(pid) {
+            if (!confirm('Cancel query for PID ' + pid + '?')) return;
+            var p = getDBParams(); if (!p) return;
+            fetch('/api/sessions/' + pid + '/cancel?' + p, { method: 'POST', credentials: 'same-origin' })
+                .then(function() { window.refreshSessions(); });
+        };
+
+        window.terminateSession = function(pid) {
+            if (!confirm('Terminate session PID ' + pid + '?')) return;
+            var p = getDBParams(); if (!p) return;
+            fetch('/api/sessions/' + pid + '?' + p, { method: 'DELETE', credentials: 'same-origin' })
+                .then(function() { window.refreshSessions(); });
+        };
+
+        // Bind search/filter inputs to trigger refresh
+        document.addEventListener('DOMContentLoaded', function() {
+            var sSearch = document.querySelector('#sessions-section input[name="session_search"]');
+            var sActive = document.querySelector('#sessions-section input[name="active_only"]');
+            var lSearch = document.querySelector('#locks-section input[name="locks_search"]');
+            var pSearch = document.querySelector('#prepared-section input[name="prepared_search"]');
+            var debounce = {};
+            function debounced(fn, key, ms) {
+                return function() {
+                    clearTimeout(debounce[key]);
+                    debounce[key] = setTimeout(fn, ms);
+                };
+            }
+            if (sSearch) sSearch.addEventListener('input', debounced(window.refreshSessions, 's', 300));
+            if (sActive) sActive.addEventListener('change', function() { window.refreshSessions(); });
+            if (lSearch) lSearch.addEventListener('input', debounced(window.refreshLocks, 'l', 300));
+            if (pSearch) pSearch.addEventListener('input', debounced(window.refreshPrepared, 'p', 300));
+        });
+    })();
+    </script>
 
 </div>
