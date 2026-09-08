@@ -89,6 +89,19 @@ func (s *Server) getOrCreatePool(ctx context.Context, id int64) (*pgxpool.Pool, 
 	return pool, nil
 }
 
+// probeServer reports whether a live connection can be established to the
+// maintenance database of a registered server. It reuses the cached pool when
+// one exists so repeated probes in the sidebar stay cheap.
+func (s *Server) probeServer(ctx context.Context, id int64) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	pool, err := s.getOrCreatePool(probeCtx, id)
+	if err != nil {
+		return false
+	}
+	return pool.Ping(probeCtx) == nil
+}
+
 // getOrCreateDbPool returns a cached pgx pool connected to one specific
 // database of a registered server. Used by database-level tree endpoints,
 // whose catalog queries must run against that database itself.

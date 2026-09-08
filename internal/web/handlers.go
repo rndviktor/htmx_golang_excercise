@@ -140,12 +140,17 @@ func (s *Server) handleServerList(w http.ResponseWriter, r *http.Request) {
 
 	nodes := make([]treeNode, 0, len(servers))
 	for _, srv := range servers {
+		state := "off"
+		if s.probeServer(r.Context(), srv.ID) {
+			state = "on"
+		}
 		nodes = append(nodes, treeNode{
 			ID:    fmt.Sprintf("server-%d", srv.ID),
 			Icon:  "🖥️",
 			Label: srv.Name,
 			Sub:   fmt.Sprintf("%s:%d / %s", srv.Host, srv.Port, srv.MaintenanceDb),
 			URL:   fmt.Sprintf("/api/servers/%d/children", srv.ID),
+			State: state,
 		})
 	}
 
