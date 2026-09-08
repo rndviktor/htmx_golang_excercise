@@ -623,6 +623,7 @@
             // Create tab button
             const btn = document.createElement("button");
             btn.className = "tab-btn flex items-center space-x-2 px-4 py-2 font-medium rounded-t text-gray-400 hover:text-gray-200";
+            btn.draggable = true;
             btn.dataset.tabId = id;
             btn.innerHTML = '<span>' + label + '</span>' +
                 '<span class="text-xs text-gray-500 hover:text-gray-300" onclick="closeTab(\'' + id + '\', event)">✕</span>';
@@ -748,6 +749,75 @@
                 const last = remaining[remaining.length - 1];
                 switchTab(last.dataset.tabId);
             }
+        }
+
+        // -----------------------------------------------------------------------------
+        // Draggable script tabs – reorder by dragging a tab button in #tab-bar.
+        // Uses native HTML5 drag-and-drop with event delegation so tabs created
+        // later (openTab) work without extra wiring. The Dashboard tab and the
+        // history toggle are not reorderable.
+        // -----------------------------------------------------------------------------
+        let dragTabId = null;
+
+        function initTabDrag() {
+            const bar = document.getElementById("tab-bar");
+            if (!bar) return;
+
+            bar.addEventListener("dragstart", (e) => {
+                const btn = e.target.closest(".tab-btn");
+                if (!btn || btn.dataset.tabId === "dashboard") {
+                    e.preventDefault();
+                    return;
+                }
+                // Ignore drags that begin on the close (✕) button.
+                if (e.target.closest("[onclick^='closeTab']")) {
+                    e.preventDefault();
+                    return;
+                }
+                dragTabId = btn.dataset.tabId;
+                btn.classList.add("opacity-50");
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", btn.dataset.tabId);
+            });
+
+            bar.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                const over = e.target.closest(".tab-btn");
+                if (!over || !dragTabId || over.dataset.tabId === "dashboard") return;
+                e.dataTransfer.dropEffect = "move";
+            });
+
+            bar.addEventListener("drop", (e) => {
+                e.preventDefault();
+                const over = e.target.closest(".tab-btn");
+                if (!over || !dragTabId || over.dataset.tabId === "dashboard") return;
+                if (over.dataset.tabId === dragTabId) return;
+
+                const dragBtn = bar.querySelector('.tab-btn[data-tab-id="' + dragTabId + '"]');
+                if (!dragBtn) return;
+
+                const rect = over.getBoundingClientRect();
+                const after = e.clientX > rect.left + rect.width / 2;
+
+                // Reorder the DOM node: insert before or after the hovered tab.
+                if (after && over.nextElementSibling === dragBtn) return;
+                if (!after && over === dragBtn) return;
+                if (after) {
+                    bar.insertBefore(dragBtn, over.nextElementSibling);
+                } else {
+                    bar.insertBefore(dragBtn, over);
+                }
+
+                dragBtn.classList.remove("opacity-50");
+                dragTabId = null;
+                scheduleSave();
+            });
+
+            bar.addEventListener("dragend", () => {
+                const dragBtn = bar.querySelector('.tab-btn[data-tab-id="' + dragTabId + '"]');
+                if (dragBtn) dragBtn.classList.remove("opacity-50");
+                dragTabId = null;
+            });
         }
 
         // -----------------------------------------------------------------------------
@@ -1264,6 +1334,7 @@
             updateDashboardForTreeSelection(btn);
         });
         document.addEventListener("DOMContentLoaded", restoreWorkspace);
+        document.addEventListener("DOMContentLoaded", initTabDrag);
         document.addEventListener("DOMContentLoaded", () => {
             const tabBar = document.getElementById("tab-bar");
             if (tabBar) tabBar.addEventListener("click", scheduleSave);
@@ -1281,6 +1352,7 @@
                 if (!elt || elt.id !== "app-root") return;
                 if (document.getElementById("tab-bar")) {
                     if (!workspaceRestored) restoreWorkspace();
+                    initTabDrag();
                 } else if (workspaceRestored) {
                     stopMonitoring();
                     workspaceRestored = false;
