@@ -123,9 +123,9 @@
 
                 menu.appendChild(menuItem("Delete", true));
 
-                // The "Scripts" submenu generates table DDL/DML scripts, so it
-                // is only offered when right-clicking a table node.
-                if (currentMenuKind === "table") {
+                // The "Scripts" submenu generates DDL/DML scripts. Tables get
+                // the full set, views get CREATE, INSERT and SELECT.
+                if (currentMenuKind === "table" || currentMenuKind === "view") {
                     const divider = document.createElement("div");
                     divider.className = "my-1 border-t border-gray-700";
                     menu.appendChild(divider);
@@ -137,8 +137,11 @@
                     trigger.innerHTML = '<span>Scripts</span><span class="text-xs text-gray-500">\u25B8</span>';
                     const sub = document.createElement("div");
                     sub.className = "absolute left-full top-0 hidden group-hover:block bg-gray-800 border border-gray-600 rounded shadow-xl py-1 min-w-[12rem]";
-                    ["CREATE Script", "DELETE Script", "INSERT Script",
-                     "SELECT Script", "UPDATE Script"].forEach(
+                    const scripts = currentMenuKind === "table"
+                        ? ["CREATE Script", "DELETE Script", "INSERT Script",
+                           "SELECT Script", "UPDATE Script"]
+                        : ["CREATE Script", "INSERT Script", "SELECT Script"];
+                    scripts.forEach(
                         (label) => {
                             const item = menuItem(label, false);
                             item.addEventListener("click", () => {

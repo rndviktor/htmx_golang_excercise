@@ -87,6 +87,14 @@ func (s *Server) Routes() http.Handler {
 							r.Get("/insert-script", s.handleInsertScript)
 							r.Get("/delete-script", s.handleDeleteScript)
 						})
+
+						r.Route("/views/{viewName}", func(r chi.Router) {
+							r.Get("/children", s.handleViewChildren)
+							r.Get("/{category}", s.handleViewCategory)
+							r.Get("/columns-script", s.handleSelectViewScript)
+							r.Get("/create-script", s.handleCreateViewScript)
+							r.Get("/insert-script", s.handleInsertViewScript)
+						})
 					})
 				})
 			})
@@ -433,6 +441,25 @@ func (s *Server) handleSchemaCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Views are not leaves either: each one expands into its own object
+	// folders (columns, rules, triggers) and carries a right-click context
+	// menu with the view scripts.
+	if slug == "views" {
+		nodes := make([]treeNode, 0, len(names))
+		for _, name := range names {
+			viewPath := fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/views/%s", id, dbName, schemaName, name)
+			nodes = append(nodes, treeNode{
+				ID:    fmt.Sprintf("view-%d-%s-%s-%s", id, dbName, schemaName, name),
+				Icon:  cat.Icon,
+				Label: name,
+				URL:   viewPath + "/children",
+				Menu:  "view",
+			})
+		}
+		renderTree(w, nodes, cat.Empty)
+		return
+	}
+
 	renderTree(w, leaves(cat.Icon, names), cat.Empty)
 }
 
@@ -530,6 +557,66 @@ func (s *Server) handleTableCategory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	names, err := cat.ListNames(r.Context(), pool, schemaName, tableName)
+	if err != nil {
+		log.Printf("Failed to load %s: %v", cat.Label, err)
+		http.Error(w, "Failed to load "+cat.Label, http.StatusInternalServerError)
+		return
+	}
+
+	renderTree(w, leaves(cat.Icon, names), cat.Empty)
+}
+
+// loadViewPool validates the {serverID}/{dbName}/{schemaName}/{viewName}
+// route params and returns a live pgx pool connected to that database. On
+// failure it writes the error response itself and returns ok=false.
+func (s *Server) loadViewPool(w http.ResponseWriter, r *http.Request) (*pgxpool.Pool, int64, string, string, string, bool) {
+	pool, id, dbName, schemaName, ok := s.loadSchemaPool(w, r)
+	if !ok {
+		return nil, 0, "", "", "", false
+	}
+
+	viewName := chi.URLParam(r, "viewName")
+	if viewName == "" {
+		http.Error(w, "Invalid view name", http.StatusBadRequest)
+		return nil, 0, "", "", "", false
+	}
+
+	return pool, id, dbName, schemaName, viewName, true
+}
+
+// handleViewChildren renders the object folders shown when a view node is
+// expanded in the tree.
+func (s *Server) handleViewChildren(w http.ResponseWriter, r *http.Request) {
+	// Connecting validates the server, database and schema before the folders
+	// are rendered.
+	_, id, dbName, schemaName, viewName, ok := s.loadViewPool(w, r)
+	if !ok {
+		return
+	}
+
+	renderTree(w, categoryFolders(
+		fmt.Sprintf("view-%d-%s-%s-%s", id, dbName, schemaName, viewName),
+		fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/views/%s", id, dbName, schemaName, viewName),
+		viewCategories,
+	), "")
+}
+
+// handleViewCategory lists the contents of one folder inside a view
+// (columns, rules, triggers) queried live from that database.
+func (s *Server) handleViewCategory(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "category")
+	cat := findCategory(viewCategories, slug)
+	if cat == nil {
+		http.Error(w, "Unknown view item category", http.StatusNotFound)
+		return
+	}
+
+	pool, _, _, schemaName, viewName, ok := s.loadViewPool(w, r)
+	if !ok {
+		return
+	}
+
+	names, err := cat.ListNames(r.Context(), pool, schemaName, viewName)
 	if err != nil {
 		log.Printf("Failed to load %s: %v", cat.Label, err)
 		http.Error(w, "Failed to load "+cat.Label, http.StatusInternalServerError)

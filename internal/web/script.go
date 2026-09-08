@@ -153,6 +153,101 @@ func (s *Server) handleInsertScript(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"query": query})
 }
 
+// handleCreateViewScript generates a pgAdmin-style CREATE OR REPLACE VIEW
+// script for a view and returns it as JSON {query: "..."}. The view body is
+// the live definition returned by pg_get_viewdef.
+func (s *Server) handleCreateViewScript(w http.ResponseWriter, r *http.Request) {
+	pool, _, _, schemaName, viewName, ok := s.loadViewPool(w, r)
+	if !ok {
+		return
+	}
+
+	definition, err := pgdb.New(pool).GetViewDefinition(r.Context(), pgdb.GetViewDefinitionParams{
+		Nspname: schemaName,
+		Relname: viewName,
+	})
+	if err != nil {
+		http.Error(w, "Failed to query view definition: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var b strings.Builder
+	qualified := qualIdent(schemaName, viewName)
+
+	b.WriteString("-- View: ")
+	b.WriteString(qualified)
+	b.WriteString("\n\n-- DROP VIEW IF EXISTS ")
+	b.WriteString(qualified)
+	b.WriteString(";\n\nCREATE OR REPLACE VIEW ")
+	b.WriteString(qualified)
+	b.WriteString(" AS\n")
+	b.WriteString(strings.TrimRight(definition, " \t\r\n"))
+	b.WriteString(";\n")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"query": b.String()})
+}
+
+// handleInsertViewScript generates a skeleton INSERT statement for a view and
+// returns it as JSON {query: "..."}. View columns are read from
+// information_schema, exactly as they are for tables.
+func (s *Server) handleInsertViewScript(w http.ResponseWriter, r *http.Request) {
+	pool, _, _, schemaName, viewName, ok := s.loadViewPool(w, r)
+	if !ok {
+		return
+	}
+
+	items, err := pgdb.New(pool).GetTableColumns(r.Context(), pgdb.GetTableColumnsParams{
+		TableSchema: schemaName,
+		TableName:   viewName,
+	})
+	if err != nil {
+		http.Error(w, "Failed to query columns: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	cols := make([]string, 0, len(items))
+	for _, it := range items {
+		cols = append(cols, getString(it))
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(cols)), ", ")
+
+	query := "INSERT INTO " + qualIdent(schemaName, viewName) + "(\n\t" +
+		strings.Join(cols, ", ") + ")\n\tVALUES (" + placeholders + ");"
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"query": query})
+}
+
+// handleSelectViewScript returns a SELECT script for a view as JSON
+// {query: "..."}, listing its columns exactly like the table SELECT script.
+func (s *Server) handleSelectViewScript(w http.ResponseWriter, r *http.Request) {
+	pool, _, _, schemaName, viewName, ok := s.loadViewPool(w, r)
+	if !ok {
+		return
+	}
+
+	items, err := pgdb.New(pool).GetTableColumns(r.Context(), pgdb.GetTableColumnsParams{
+		TableSchema: schemaName,
+		TableName:   viewName,
+	})
+	if err != nil {
+		http.Error(w, "Failed to query columns", http.StatusInternalServerError)
+		return
+	}
+
+	var cols []string
+	for _, it := range items {
+		cols = append(cols, getString(it))
+	}
+
+	query := "SELECT " + strings.Join(cols, ", ") + "\nFROM " + viewName + ";"
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"query": query})
+}
+
 // columnLine renders one CREATE TABLE column definition from its metadata,
 // matching pgAdmin's formatting: serial detection, collation, NOT NULL and
 // DEFAULT clauses.

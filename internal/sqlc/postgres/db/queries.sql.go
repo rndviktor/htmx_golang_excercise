@@ -322,6 +322,26 @@ func (q *Queries) GetTableInfo(ctx context.Context, arg GetTableInfoParams) (Get
 	return i, err
 }
 
+const getViewDefinition = `-- name: GetViewDefinition :one
+SELECT pg_get_viewdef(c.oid, true)::text AS definition
+FROM pg_class c
+JOIN pg_namespace n ON c.relnamespace = n.oid
+WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'v'
+LIMIT 1
+`
+
+type GetViewDefinitionParams struct {
+	Nspname string
+	Relname string
+}
+
+func (q *Queries) GetViewDefinition(ctx context.Context, arg GetViewDefinitionParams) (string, error) {
+	row := q.db.QueryRow(ctx, getViewDefinition, arg.Nspname, arg.Relname)
+	var definition string
+	err := row.Scan(&definition)
+	return definition, err
+}
+
 const listCasts = `-- name: ListCasts :many
 
 SELECT '(' || castsource::regtype || ' AS ' || casttarget::regtype || ')' FROM pg_cast ORDER BY 1

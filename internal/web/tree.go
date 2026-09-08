@@ -250,3 +250,23 @@ func findCategory(cats []category, slug string) *category {
 	}
 	return nil
 }
+
+// viewCategories lists the object folders shown when a view node is expanded.
+// A view exposes columns (information_schema reports view columns too), rules
+// and triggers (pg_rules and pg_trigger cover views as well). Every query
+// takes the schema name as arg 0 and the view name as arg 1.
+var viewCategories = []category{
+	{Slug: "columns", Label: "Columns", Icon: "📊", Empty: "No columns found.", NumArgs: 2,
+		ListNames: func(ctx context.Context, pool *pgxpool.Pool, args ...string) ([]string, error) {
+			items, err := q(pool).ListTableColumns(ctx, pgdb.ListTableColumnsParams{TableSchema: args[0], TableName: args[1]})
+			return toNames(items, getString), err
+		}},
+	{Slug: "rules", Label: "Rules", Icon: "📜", Empty: "No rules found.", NumArgs: 2,
+		ListNames: func(ctx context.Context, pool *pgxpool.Pool, args ...string) ([]string, error) {
+			return q(pool).ListTableRules(ctx, pgdb.ListTableRulesParams{Schemaname: args[0], Tablename: args[1]})
+		}},
+	{Slug: "triggers", Label: "Triggers", Icon: "💥", Empty: "No triggers found.", NumArgs: 2,
+		ListNames: func(ctx context.Context, pool *pgxpool.Pool, args ...string) ([]string, error) {
+			return q(pool).ListTableTriggers(ctx, pgdb.ListTableTriggersParams{Nspname: args[0], Relname: args[1]})
+		}},
+}

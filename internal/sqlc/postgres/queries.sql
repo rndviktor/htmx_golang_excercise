@@ -149,6 +149,13 @@ FROM pg_tables
 WHERE schemaname = $1 AND tablename = $2
 LIMIT 1;
 
+-- name: GetViewDefinition :one
+SELECT pg_get_viewdef(c.oid, true)::text AS definition
+FROM pg_class c
+JOIN pg_namespace n ON c.relnamespace = n.oid
+WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'v'
+LIMIT 1;
+
 -- name: GetPrimaryKeyColumns :many
 SELECT c.conname, a.attname
 FROM pg_constraint c
