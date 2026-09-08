@@ -199,3 +199,17 @@ JOIN pg_class t ON tg.tgrelid = t.oid
 JOIN pg_namespace n ON t.relnamespace = n.oid
 WHERE n.nspname = $1 AND t.relname = $2 AND NOT tg.tgisinternal
 ORDER BY 1;
+
+-- name: CountTableObjects :many
+SELECT 'columns' AS category, count(*) AS n FROM information_schema.columns col WHERE col.table_schema = $1 AND col.table_name = $2
+UNION ALL SELECT 'constraints', count(*) FROM pg_constraint con
+  JOIN pg_class cls ON con.conrelid = cls.oid
+  JOIN pg_namespace ns ON cls.relnamespace = ns.oid
+  WHERE ns.nspname = $1 AND cls.relname = $2
+UNION ALL SELECT 'indexes', count(*) FROM pg_indexes idx WHERE idx.schemaname = $1 AND idx.tablename = $2
+UNION ALL SELECT 'rls-policies', count(*) FROM pg_policies pol WHERE pol.schemaname = $1 AND pol.tablename = $2
+UNION ALL SELECT 'rules', count(*) FROM pg_rules rl WHERE rl.schemaname = $1 AND rl.tablename = $2
+UNION ALL SELECT 'triggers', count(*) FROM pg_trigger trg
+  JOIN pg_class cls2 ON trg.tgrelid = cls2.oid
+  JOIN pg_namespace ns2 ON cls2.relnamespace = ns2.oid
+  WHERE ns2.nspname = $1 AND cls2.relname = $2 AND NOT trg.tgisinternal;

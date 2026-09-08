@@ -688,7 +688,7 @@
             // URL: /api/servers/{id}/databases/{db}/schemas/{schema}/tables/{table}
             const serverID = parts[3];
             const dbName = parts[5];
-            fetch(baseURL + "/columns")
+            fetch(baseURL + "/columns-script")
                 .then((r) => r.json())
                 .then((data) => {
                     openTab("SELECT " + tableName, data.query, serverID, dbName);

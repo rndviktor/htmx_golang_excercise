@@ -82,7 +82,7 @@ func (s *Server) Routes() http.Handler {
 						r.Route("/tables/{tableName}", func(r chi.Router) {
 							r.Get("/children", s.handleTableChildren)
 							r.Get("/{category}", s.handleTableCategory)
-							r.Get("/columns", s.handleTableColumns)
+							r.Get("/columns-script", s.handleTableColumns)
 							r.Get("/create-script", s.handleCreateScript)
 							r.Get("/insert-script", s.handleInsertScript)
 							r.Get("/delete-script", s.handleDeleteScript)
@@ -484,18 +484,34 @@ func (s *Server) loadTablePool(w http.ResponseWriter, r *http.Request) (*pgxpool
 // handleTableChildren renders the object folders shown when a table node is
 // expanded in the tree.
 func (s *Server) handleTableChildren(w http.ResponseWriter, r *http.Request) {
-	// The pool is not needed here, but connecting validates the server and
-	// database before the folders are rendered.
-	_, id, dbName, schemaName, tableName, ok := s.loadTablePool(w, r)
+	// Connecting validates the server, database and schema before the folders
+	// are rendered.
+	pool, id, dbName, schemaName, tableName, ok := s.loadTablePool(w, r)
 	if !ok {
 		return
 	}
 
-	renderTree(w, categoryFolders(
-		fmt.Sprintf("table-%d-%s-%s-%s", id, dbName, schemaName, tableName),
-		fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/tables/%s", id, dbName, schemaName, tableName),
-		tableCategories,
-	), "")
+	base := fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s/tables/%s", id, dbName, schemaName, tableName)
+	nodeID := fmt.Sprintf("table-%d-%s-%s-%s", id, dbName, schemaName, tableName)
+
+	// Live counts tag each category folder with a badge. Best-effort: on
+	// error the folders still render, just without badges.
+	counts, err := pgdb.New(pool).CountTableObjects(r.Context(), pgdb.CountTableObjectsParams{
+		TableSchema: schemaName,
+		TableName:   tableName,
+	})
+	if err != nil {
+		log.Printf("Failed to count table objects: %v", err)
+		renderTree(w, categoryFolders(nodeID, base, tableCategories), "")
+		return
+	}
+
+	bySlug := make(map[string]int64, len(counts))
+	for _, c := range counts {
+		bySlug[c.Category] = c.N
+	}
+
+	renderTree(w, categoryFoldersWithCounts(nodeID, base, tableCategories, bySlug), "")
 }
 
 // handleTableCategory lists the contents of one folder inside a table
