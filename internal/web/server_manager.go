@@ -102,6 +102,16 @@ func (s *Server) probeServer(ctx context.Context, id int64) bool {
 	return pool.Ping(probeCtx) == nil
 }
 
+// peekCachedPool returns the cached pgx pool for a registered server without
+// dialing it. It returns nil when the server has not been connected to yet.
+// Used by server-level tree endpoints to enrich folders with counts without
+// incurring connection latency (or blocking on unreachable servers).
+func (s *Server) peekCachedPool(id int64) *pgxpool.Pool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return dbPools[id]
+}
+
 // getOrCreateDbPool returns a cached pgx pool connected to one specific
 // database of a registered server. Used by database-level tree endpoints,
 // whose catalog queries must run against that database itself.

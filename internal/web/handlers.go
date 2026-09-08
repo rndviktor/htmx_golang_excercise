@@ -175,10 +175,35 @@ func (s *Server) handleServerChildren(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := fmt.Sprintf("/api/servers/%d", id)
+
+	// Folder counts (databases / roles / tablespaces) come from the cached
+	// maintenance pool only — never dial here — so rendering the folders is
+	// never delayed by an unreachable server. Without a live pool the folders
+	// render with no badges, exactly as before.
+	counts := make(map[string]int64)
+	if pool := s.peekCachedPool(id); pool != nil {
+		rows, cerr := pgdb.New(pool).CountServerObjects(r.Context())
+		if cerr != nil {
+			log.Printf("Failed to count server objects: %v", cerr)
+		} else {
+			for _, row := range rows {
+				counts[row.Category] = row.N
+			}
+		}
+	}
+
+	folder := func(cid, slug, icon, label, url string) treeNode {
+		n := expander(cid, icon, label, url)
+		if cnt, ok := counts[slug]; ok && cnt > 0 {
+			n.Badge = strconv.FormatInt(cnt, 10)
+		}
+		return n
+	}
+
 	renderTree(w, []treeNode{
-		expander(fmt.Sprintf("server-%d-databases", id), "🗃️", "Databases", base+"/databases"),
-		expander(fmt.Sprintf("server-%d-roles", id), "👥", "Login/Group Roles", base+"/roles"),
-		expander(fmt.Sprintf("server-%d-tablespaces", id), "💽", "Tablespaces", base+"/tablespaces"),
+		folder(fmt.Sprintf("server-%d-databases", id), "databases", "🗃️", "Databases", base+"/databases"),
+		folder(fmt.Sprintf("server-%d-roles", id), "roles", "👥", "Login/Group Roles", base+"/roles"),
+		folder(fmt.Sprintf("server-%d-tablespaces", id), "tablespaces", "💽", "Tablespaces", base+"/tablespaces"),
 	}, "")
 }
 
@@ -234,15 +259,34 @@ func (s *Server) handleServerDatabases(w http.ResponseWriter, r *http.Request) {
 // handleDatabaseChildren renders the category folders shown when a database
 // node is expanded in the tree.
 func (s *Server) handleDatabaseChildren(w http.ResponseWriter, r *http.Request) {
-	_, id, dbName, ok := s.loadDatabasePool(w, r)
+	pool, id, dbName, ok := s.loadDatabasePool(w, r)
 	if !ok {
 		return
 	}
 
-	renderTree(w, categoryFolders(
+	// Live counts tag each category folder with a badge. Best-effort: on
+	// error the folders still render, just without badges.
+	counts, err := pgdb.New(pool).CountDatabaseObjects(r.Context())
+	if err != nil {
+		log.Printf("Failed to count database objects: %v", err)
+		renderTree(w, categoryFolders(
+			fmt.Sprintf("database-%d-%s", id, dbName),
+			fmt.Sprintf("/api/servers/%d/databases/%s", id, dbName),
+			dbCategories,
+		), "")
+		return
+	}
+
+	bySlug := make(map[string]int64, len(counts))
+	for _, c := range counts {
+		bySlug[c.Category] = c.N
+	}
+
+	renderTree(w, categoryFoldersWithCounts(
 		fmt.Sprintf("database-%d-%s", id, dbName),
 		fmt.Sprintf("/api/servers/%d/databases/%s", id, dbName),
 		dbCategories,
+		bySlug,
 	), "")
 }
 
@@ -317,15 +361,34 @@ func (s *Server) loadDatabasePool(w http.ResponseWriter, r *http.Request) (*pgxp
 // handleSchemaChildren renders the object folders shown when a schema node is
 // expanded in the tree.
 func (s *Server) handleSchemaChildren(w http.ResponseWriter, r *http.Request) {
-	_, id, dbName, schemaName, ok := s.loadSchemaPool(w, r)
+	pool, id, dbName, schemaName, ok := s.loadSchemaPool(w, r)
 	if !ok {
 		return
 	}
 
-	renderTree(w, categoryFolders(
+	// Live item counts tag each folder with a badge. Best-effort: if the
+	// count query fails the folders still render, just without badges.
+	counts, err := pgdb.New(pool).CountSchemaObjects(r.Context(), schemaName)
+	if err != nil {
+		log.Printf("Failed to count schema objects: %v", err)
+		renderTree(w, categoryFolders(
+			fmt.Sprintf("schema-%d-%s-%s", id, dbName, schemaName),
+			fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s", id, dbName, schemaName),
+			schemaCategories,
+		), "")
+		return
+	}
+
+	bySlug := make(map[string]int64, len(counts))
+	for _, c := range counts {
+		bySlug[c.Category] = c.N
+	}
+
+	renderTree(w, categoryFoldersWithCounts(
 		fmt.Sprintf("schema-%d-%s-%s", id, dbName, schemaName),
 		fmt.Sprintf("/api/servers/%d/databases/%s/schemas/%s", id, dbName, schemaName),
 		schemaCategories,
+		bySlug,
 	), "")
 }
 

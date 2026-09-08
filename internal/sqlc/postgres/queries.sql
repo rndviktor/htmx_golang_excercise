@@ -13,6 +13,11 @@ ORDER BY rolname;
 SELECT spcname FROM pg_tablespace
 ORDER BY spcname;
 
+-- name: CountServerObjects :many
+SELECT 'databases' AS category, count(*) AS n FROM pg_database d WHERE d.datallowconn AND NOT d.datistemplate
+UNION ALL SELECT 'roles', count(*) FROM pg_roles
+UNION ALL SELECT 'tablespaces', count(*) FROM pg_tablespace;
+
 -- Database-level category queries (run against a specific database)
 
 -- name: ListCasts :many
@@ -87,6 +92,35 @@ SELECT t.typname FROM pg_type t
 JOIN pg_namespace n ON t.typnamespace = n.oid
 WHERE n.nspname = $1 AND t.typtype = 'd'
 ORDER BY 1;
+
+-- name: CountSchemaObjects :many
+SELECT 'tables' AS category, count(*) AS n FROM pg_tables t WHERE t.schemaname = $1
+UNION ALL SELECT 'views', count(*) FROM pg_views v WHERE v.schemaname = $1
+UNION ALL SELECT 'materialized-views', count(*) FROM pg_matviews m WHERE m.schemaname = $1
+UNION ALL SELECT 'sequences', count(*) FROM pg_sequences s WHERE s.schemaname = $1
+UNION ALL SELECT 'functions', count(*) FROM pg_proc p
+  JOIN pg_namespace n ON p.pronamespace = n.oid
+  WHERE n.nspname = $1 AND p.prokind = 'f'
+UNION ALL SELECT 'procedures', count(*) FROM pg_proc p2
+  JOIN pg_namespace n2 ON p2.pronamespace = n2.oid
+  WHERE n2.nspname = $1 AND p2.prokind = 'p'
+UNION ALL SELECT 'types', count(*) FROM pg_type t1
+  JOIN pg_namespace n3 ON t1.typnamespace = n3.oid
+  WHERE n3.nspname = $1 AND t1.typtype IN ('c', 'e', 'r')
+UNION ALL SELECT 'domains', count(*) FROM pg_type t2
+  JOIN pg_namespace n4 ON t2.typnamespace = n4.oid
+  WHERE n4.nspname = $1 AND t2.typtype = 'd';
+
+-- name: CountDatabaseObjects :many
+SELECT 'casts' AS category, count(*) AS n FROM pg_cast
+UNION ALL SELECT 'catalogs', count(*) FROM pg_namespace ns1 WHERE ns1.nspname = 'information_schema' OR ns1.nspname LIKE 'pg\_%'
+UNION ALL SELECT 'event-triggers', count(*) FROM pg_event_trigger
+UNION ALL SELECT 'extensions', count(*) FROM pg_extension
+UNION ALL SELECT 'foreign-data-wrappers', count(*) FROM pg_foreign_data_wrapper
+UNION ALL SELECT 'languages', count(*) FROM pg_language l WHERE l.lanispl
+UNION ALL SELECT 'publications', count(*) FROM pg_publication
+UNION ALL SELECT 'schemas', count(*) FROM pg_namespace ns2 WHERE ns2.nspname NOT LIKE 'pg\_%' AND ns2.nspname <> 'information_schema'
+UNION ALL SELECT 'subscriptions', count(*) FROM pg_subscription sub WHERE sub.subdbid = (SELECT oid FROM pg_database WHERE datname = current_database());
 
 -- Table-level category queries ($1 = schema name, $2 = table name)
 

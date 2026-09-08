@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -56,6 +57,22 @@ func categoryFolders(prefix, baseURL string, cats []category) []treeNode {
 			c.Label,
 			baseURL+"/"+c.Slug,
 		))
+	}
+	return nodes
+}
+
+// categoryFoldersWithCounts is categoryFolders but tags each expander with a
+// badge showing the live item count for that category. counts is keyed by
+// category slug; categories with a count of zero (or missing from the map)
+// render without a badge.
+func categoryFoldersWithCounts(prefix, baseURL string, cats []category, counts map[string]int64) []treeNode {
+	nodes := make([]treeNode, 0, len(cats))
+	for _, c := range cats {
+		n := expander(prefix+"-"+c.Slug, c.Icon, c.Label, baseURL+"/"+c.Slug)
+		if cnt, ok := counts[c.Slug]; ok && cnt > 0 {
+			n.Badge = strconv.FormatInt(cnt, 10)
+		}
+		nodes = append(nodes, n)
 	}
 	return nodes
 }
