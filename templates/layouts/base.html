@@ -75,6 +75,92 @@
         }
         document.addEventListener("DOMContentLoaded", initSidebarResize);
 
+        // Makes the two splitters inside a script tab panel draggable:
+        //   .query-resizer-v  -> resizes the Query / Scratch Pad split
+        //   .query-resizer-h  -> resizes the editors vs. results split
+        // Sizes are remembered per tab in localStorage and restored when the
+        // panel is recreated (openTab fetch or workspace restore). Double
+        // clicking a handle resets that split to its default.
+        function initScriptResizers(panel) {
+            if (!panel) return;
+            const vsplit = panel.querySelector(".query-vsplit");
+            const leftPane = panel.querySelector(".q-editor");
+            const resizerV = panel.querySelector(".query-resizer-v");
+            const resizerH = panel.querySelector(".query-resizer-h");
+
+            const vKey = "script-split-v-" + (panel.id || "tab");
+            const hKey = "script-split-h-" + (panel.id || "tab");
+
+            try {
+                const savedV = parseInt(localStorage.getItem(vKey), 10);
+                if (savedV && leftPane) leftPane.style.width = savedV + "px";
+                const savedH = parseInt(localStorage.getItem(hKey), 10);
+                if (savedH && vsplit) vsplit.style.height = savedH + "px";
+            } catch (e) {}
+
+            if (resizerV && leftPane && vsplit) {
+                resizerV.addEventListener("mousedown", (e) => {
+                    e.preventDefault();
+                    const startX = e.clientX;
+                    const startW = leftPane.getBoundingClientRect().width;
+                    const onMove = (move) => {
+                        let w = startW + move.clientX - startX;
+                        w = Math.min(w, vsplit.getBoundingClientRect().width - 160);
+                        leftPane.style.width = Math.max(w, 160) + "px";
+                    };
+                    const onUp = () => {
+                        document.removeEventListener("mousemove", onMove);
+                        document.removeEventListener("mouseup", onUp);
+                        document.body.classList.remove("select-none");
+                        resizerV.classList.remove("bg-blue-500");
+                        try {
+                            localStorage.setItem(vKey, String(leftPane.getBoundingClientRect().width));
+                        } catch (err) {}
+                        scheduleSave();
+                    };
+                    document.body.classList.add("select-none");
+                    resizerV.classList.add("bg-blue-500");
+                    document.addEventListener("mousemove", onMove);
+                    document.addEventListener("mouseup", onUp);
+                });
+                resizerV.addEventListener("dblclick", () => {
+                    leftPane.style.width = "50%";
+                    try { localStorage.removeItem(vKey); } catch (err) {}
+                });
+            }
+
+            if (resizerH && vsplit) {
+                resizerH.addEventListener("mousedown", (e) => {
+                    e.preventDefault();
+                    const startY = e.clientY;
+                    const startH = vsplit.getBoundingClientRect().height;
+                    const onMove = (move) => {
+                        let h = startH + move.clientY - startY;
+                        h = Math.min(h, panel.getBoundingClientRect().height - 140);
+                        vsplit.style.height = Math.max(h, 120) + "px";
+                    };
+                    const onUp = () => {
+                        document.removeEventListener("mousemove", onMove);
+                        document.removeEventListener("mouseup", onUp);
+                        document.body.classList.remove("select-none");
+                        resizerH.classList.remove("bg-blue-500");
+                        try {
+                            localStorage.setItem(hKey, String(vsplit.getBoundingClientRect().height));
+                        } catch (err) {}
+                        scheduleSave();
+                    };
+                    document.body.classList.add("select-none");
+                    resizerH.classList.add("bg-blue-500");
+                    document.addEventListener("mousemove", onMove);
+                    document.addEventListener("mouseup", onUp);
+                });
+                resizerH.addEventListener("dblclick", () => {
+                    vsplit.style.height = "300px";
+                    try { localStorage.removeItem(hKey); } catch (err) {}
+                });
+            }
+        }
+
         // -----------------------------------------------------------------------------
         // Right-click context menu for tree nodes carrying [data-tree-menu].
         // Purely visual for now: items are placeholders without server actions.
@@ -246,12 +332,10 @@
                 t.classList.toggle("border-t-transparent", !active);
             });
             panel.querySelectorAll(".output-panel").forEach((p) => {
-                p.classList.toggle("hidden", p.id !== name + "-panel" && p.id !== "data-grid");
+                const isDataGrid = p.id === "data-grid";
+                const hide = p.id !== name + "-panel" && !(isDataGrid && name === "data");
+                p.classList.toggle("hidden", hide);
             });
-            if (name === "data") {
-                const dg = panel.querySelector("#data-grid");
-                if (dg) dg.classList.remove("hidden");
-            }
         }
 
         function logMessage(panel, type, text) {
@@ -654,6 +738,7 @@
                 .then((r) => r.text())
                 .then((html) => {
                     panel.innerHTML = html;
+                    initScriptResizers(panel);
 
                     if (query) {
                         const editor = panel.querySelector("textarea[name='sql_query']");
