@@ -908,6 +908,33 @@
             });
         }
 
+        // Scrolling (mouse wheel / trackpad) over the tab bar cycles the
+        // active tab, like common editors/IDEs. Clamped to the edges; the
+        // History toggle is not a .tab-btn so it is naturally excluded.
+        function initTabScroll() {
+            const bar = document.getElementById("tab-bar");
+            if (!bar) return;
+
+            bar.addEventListener("wheel", (e) => {
+                if (dragTabId) return;
+                if (!e.target.closest(".tab-btn")) return;
+
+                const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+                if (delta === 0) return;
+                e.preventDefault();
+
+                const tabs = Array.from(bar.querySelectorAll(".tab-btn"));
+                const active = bar.querySelector(".tab-btn.bg-gray-900");
+                const idx = active ? tabs.indexOf(active) : 0;
+                if (idx === -1) return;
+
+                const next = tabs[idx + (delta > 0 ? 1 : -1)];
+                if (!next) return;
+                switchTab(next.dataset.tabId);
+                scheduleSave();
+            }, { passive: false });
+        }
+
         // -----------------------------------------------------------------------------
         // Workspace persistence – save UI state to sqlite and restore it after refresh.
         // -----------------------------------------------------------------------------
@@ -1423,6 +1450,7 @@
         });
         document.addEventListener("DOMContentLoaded", restoreWorkspace);
         document.addEventListener("DOMContentLoaded", initTabDrag);
+        document.addEventListener("DOMContentLoaded", initTabScroll);
         document.addEventListener("DOMContentLoaded", () => {
             const tabBar = document.getElementById("tab-bar");
             if (tabBar) tabBar.addEventListener("click", scheduleSave);
@@ -1441,6 +1469,7 @@
                 if (document.getElementById("tab-bar")) {
                     if (!workspaceRestored) restoreWorkspace();
                     initTabDrag();
+                    initTabScroll();
                 } else if (workspaceRestored) {
                     stopMonitoring();
                     workspaceRestored = false;
