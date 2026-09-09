@@ -755,6 +755,12 @@
                             form.appendChild(db);
                         }
                     }
+                    const connBadge = panel.querySelector("#conn-badge");
+                    if (connBadge) {
+                        connBadge.textContent = serverID && dbName
+                            ? "server " + serverID + " · " + dbName
+                            : "";
+                    }
 
                     // F5 keyboard shortcut and auto-save of the editor content
                     const textarea = panel.querySelector("textarea[name='sql_query']");
@@ -934,6 +940,27 @@
                 scheduleSave();
             }, { passive: false });
         }
+
+        // Alt+Shift+Q opens a new empty script tab. When a database (or a node
+        // under one) is selected in the tree, the tab is bound to that
+        // connection so running queries works out of the box.
+        function initTabShortcuts() {
+            document.addEventListener("keydown", (e) => {
+                if (!e.altKey || !e.shiftKey) return;
+                if (!e.key || e.key.toLowerCase() !== "q") return;
+                e.preventDefault();
+
+                const selected = document.querySelector(
+                    '#tree-root button[hx-get][hx-target="#' + selectedTreeId + '"]');
+                const conn = connectionFromTreeURL(selected ? selected.getAttribute("hx-get") : null);
+                if (conn) {
+                    openQueryToolTab(conn.serverID, conn.dbName);
+                } else {
+                    openTab("Query Tool");
+                }
+            });
+        }
+        document.addEventListener("DOMContentLoaded", initTabShortcuts);
 
         // -----------------------------------------------------------------------------
         // Workspace persistence – save UI state to sqlite and restore it after refresh.
