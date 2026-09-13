@@ -182,6 +182,96 @@
             }
         }
 
+        // Makes the result table inside #data-grid resizable:
+        //   - table-layout: fixed with a per-column width in px
+        //   - column widths sum to the table width, so no stretchy leftover
+        //     is redistributed over the columns (this is what removes the
+        //     jump at drag start); dragging a column wider than the container
+        //     makes the table overflow and #data-grid's overflow-auto shows a
+        //     horizontal scrollbar
+        //   - dragging the thin handle on a header resizes that column;
+        //     double-clicking it resets to the default layout
+        // The leading row-number column defaults to a minimal width; the rest
+        // split the remaining space equally. Column widths are remembered per
+        // tab in localStorage and restored on the next execution.
+        function initDataGridResize(grid, panel) {
+            const table = grid && grid.querySelector("table");
+            if (!table) return;
+
+            table.style.tableLayout = "fixed";
+            table.style.width = "auto";
+
+            const headers = Array.from(table.querySelectorAll("thead th"));
+            if (headers.length === 0) return;
+            const rows = Array.from(table.querySelectorAll("tbody tr"));
+
+            const MIN_WIDTH = 40;
+            const ROW_NUM_WIDTH = 44;
+            const key = "script-cols-" + (panel && panel.id ? panel.id : "tab");
+
+            let widths = null;
+            try {
+                const saved = JSON.parse(localStorage.getItem(key) || "null");
+                if (Array.isArray(saved) && saved.length === headers.length) widths = saved;
+            } catch (e) {}
+
+            // Default layout: the leading row-number column stays minimal,
+            // the remaining columns split the leftover space equally.
+            const makeEqual = () => {
+                const first = ROW_NUM_WIDTH;
+                const rest = headers.length > 1
+                    ? Math.max(MIN_WIDTH, Math.floor(((grid.clientWidth || 0) - first) / (headers.length - 1)))
+                    : MIN_WIDTH;
+                return headers.map((_, i) => i === 0 ? first : rest);
+            };
+            widths = widths || makeEqual();
+
+            headers.forEach((th, i) => {
+                th.style.width = widths[i] + "px";
+                th.classList.add("relative", "select-none", "whitespace-nowrap", "overflow-hidden", "text-ellipsis");
+                rows.forEach((tr) => {
+                    const cell = tr.children[i];
+                    if (cell) cell.classList.add("whitespace-nowrap", "overflow-hidden", "text-ellipsis");
+                });
+
+                if (th._resizer) return;
+                const handle = document.createElement("div");
+                handle.className = "absolute top-0 right-0 h-full w-1.5 cursor-col-resize z-20";
+                handle.title = "Drag to resize column";
+                handle.addEventListener("mousedown", (e) => {
+                    e.preventDefault();
+                    const startX = e.clientX;
+                    const startW = parseFloat(th.style.width) || th.getBoundingClientRect().width;
+                    const onMove = (move) => {
+                        th.style.width = Math.max(MIN_WIDTH, startW + move.clientX - startX) + "px";
+                    };
+                    const onUp = () => {
+                        document.removeEventListener("mousemove", onMove);
+                        document.removeEventListener("mouseup", onUp);
+                        document.body.classList.remove("select-none");
+                        handle.classList.remove("bg-blue-500");
+                        commit();
+                    };
+                    document.body.classList.add("select-none");
+                    handle.classList.add("bg-blue-500");
+                    document.addEventListener("mousemove", onMove);
+                    document.addEventListener("mouseup", onUp);
+                });
+                handle.addEventListener("dblclick", () => {
+                    widths = makeEqual();
+                    widths.forEach((w, j) => { headers[j].style.width = w + "px"; });
+                    commit();
+                });
+                th.appendChild(handle);
+                th._resizer = handle;
+            });
+
+            function commit() {
+                const arr = headers.map((th) => parseInt(th.style.width, 10) || 0);
+                try { localStorage.setItem(key, JSON.stringify(arr)); } catch (e) {}
+            }
+        }
+
         // -----------------------------------------------------------------------------
         // Right-click context menu for tree nodes carrying [data-tree-menu].
         // Purely visual for now: items are placeholders without server actions.
@@ -424,7 +514,10 @@
                     const result = tmp.querySelector(".query-result");
                     const elapsed = result.dataset.elapsed || "0";
                     const message = result.dataset.message || "";
-                    if (grid && result) grid.innerHTML = result.innerHTML;
+                    if (grid && result) {
+                        grid.innerHTML = result.innerHTML;
+                        initDataGridResize(grid, panel);
+                    }
 
                     const total = parseInt(result.dataset.total) || 0;
                     const totalPages = parseInt(result.dataset.totalPages) || 1;
