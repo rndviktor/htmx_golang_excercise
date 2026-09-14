@@ -465,6 +465,9 @@
             return (panel.id || "").replace("tab-content-", "");
         }
 
+        // Number of rows fetched per page by the query tool.
+        const QUERY_PAGE_LIMIT = "1000";
+
         function executeQuery(btn, page) {
             const panel = btn.closest("[id^='tab-content']");
             if (!panel) return;
@@ -498,7 +501,7 @@
                 db_name: db.value,
                 tab_id: panelTabId(panel),
                 page: String(page),
-                limit: "1000",
+                limit: QUERY_PAGE_LIMIT,
             });
 
             const t0 = performance.now();
@@ -595,7 +598,7 @@
                 db_name: db.value,
                 tab_id: panelTabId(panel),
                 page: "1",
-                limit: "1000",
+                limit: QUERY_PAGE_LIMIT,
             });
 
             const t0 = performance.now();
