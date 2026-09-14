@@ -10,6 +10,17 @@ import (
 	"path/filepath"
 )
 
+// StaticHandler serves the embedded assets under /static/ (JS, CSS, ...).
+var StaticHandler = buildStaticHandler()
+
+func buildStaticHandler() http.Handler {
+	sub, err := fs.Sub(htmxgolangexcercise.StaticFiles, "static")
+	if err != nil {
+		log.Fatalf("Failed to prepare static assets: %v", err)
+	}
+	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
+}
+
 type TemplateCache map[string]*template.Template
 
 var templates TemplateCache

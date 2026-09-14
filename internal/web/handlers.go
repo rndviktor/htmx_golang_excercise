@@ -41,6 +41,8 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/login", s.handleLoginPost)
 	r.Post("/logout", s.handleLogout)
 
+	r.Handle("/static/*", StaticHandler)
+
 	r.Group(func(r chi.Router) {
 		r.Use(s.RequireAuth)
 
