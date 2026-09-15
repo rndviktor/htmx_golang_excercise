@@ -81,12 +81,12 @@ type Setting struct {
 }
 
 type User struct {
-	ID          int64          `json:"id"`
-	Email       string         `json:"email"`
-	Password    string         `json:"password"`
-	Active      bool           `json:"active"`
-	ConfirmedAt sql.NullTime   `json:"confirmed_at"`
-	Masterpass  sql.NullString `json:"masterpass"`
+	ID           int64        `json:"id"`
+	Email        string       `json:"email"`
+	Password     string       `json:"password"`
+	Active       bool         `json:"active"`
+	ConfirmedAt  sql.NullTime `json:"confirmed_at"`
+	SessionToken string       `json:"session_token"`
 }
 
 type UserPreference struct {

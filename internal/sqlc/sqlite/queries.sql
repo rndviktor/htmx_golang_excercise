@@ -3,6 +3,23 @@ SELECT * FROM server
 WHERE id = ? AND user_id = ?
 LIMIT 1;
 
+-- name: GetUserByEmail :one
+SELECT id, email, password, active, confirmed_at
+FROM "user"
+WHERE email = ?
+LIMIT 1;
+
+-- name: GetUserByToken :one
+SELECT id, email, password, active, confirmed_at
+FROM "user"
+WHERE session_token = ?
+  AND session_token != ''
+LIMIT 1;
+
+-- name: SetUserSessionToken :exec
+UPDATE "user" SET session_token = ?
+WHERE id = ?;
+
 -- name: ListServersByGroup :many
 SELECT 
     s.id, 

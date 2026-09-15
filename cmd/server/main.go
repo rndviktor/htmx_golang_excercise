@@ -1,6 +1,7 @@
 package main
 
 import (
+	"htmx-golang-excercise/internal/env"
 	"htmx-golang-excercise/internal/web"
 	"log"
 	"net/http"
@@ -9,6 +10,10 @@ import (
 )
 
 func main() {
+	if err := env.Load(); err != nil {
+		log.Fatalf("Failed to load .env: %v", err)
+	}
+
 	if err := web.InitTemplates(); err != nil {
 		log.Fatalf("Failed to initialize templates: %v", err)
 	}

@@ -116,7 +116,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	Render(w, "index.html", map[string]any{
 		"Title":         "The Main Dashboard",
 		"Authenticated": true,
-		"Username":      GetAuthenticatedUser(r),
+		"Username":      userFromContext(r),
 	})
 }
 

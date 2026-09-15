@@ -1,3 +1,4 @@
 \tmp_server.exe
 *.db
+.env
 node_modules/

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -9,6 +10,10 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"htmx-golang-excercise/internal/db"
+	"htmx-golang-excercise/internal/passwords"
+	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
 
 const (
@@ -61,8 +66,20 @@ func verifySignedValue(signedValue string) (string, error) {
 	return value, nil
 }
 
-func setSessionCookie(w http.ResponseWriter, username string) {
-	signedCookie := signValue(username)
+// userContextKey carries the authenticated email through the request context.
+type userContextKey struct{}
+
+// userFromContext returns the authenticated user's email set by RequireAuth,
+// or "" when the request is not authenticated.
+func userFromContext(r *http.Request) string {
+	if v, ok := r.Context().Value(userContextKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+func setSessionCookie(w http.ResponseWriter, sessionToken string) {
+	signedCookie := signValue(sessionToken)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    signedCookie,
@@ -90,25 +107,43 @@ func clearSessionCookie(w http.ResponseWriter) {
 // 2. Authentication Middleware
 // -----------------------------------------------------------------------------
 
+// sessionUser validates the signed cookie and checks that its token still
+// maps to an active user in the database. The check against the DB is what
+// revokes stale cookies: when the SQLite database is deleted and recreated,
+// the fresh user row carries a new random session token, so a cookie handed
+// out against the old database no longer matches anything.
+func (s *Server) sessionUser(r *http.Request) (email string, ok bool) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return "", false
+	}
+
+	token, err := verifySignedValue(cookie.Value)
+	if err != nil || token == "" {
+		return "", false
+	}
+
+	user, err := s.DB.GetUserByToken(r.Context(), token)
+	if err != nil || !user.Active {
+		return "", false
+	}
+
+	return user.Email, true
+}
+
 // RequireAuth middleware protects routes.
 // If unauthenticated, it redirects normal requests to /login or sets HX-Redirect for HTMX.
 func (s *Server) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(sessionCookieName)
-		if err != nil {
-			s.redirectToLogin(w, r)
-			return
-		}
-
-		username, err := verifySignedValue(cookie.Value)
-		if err != nil || username == "" {
+		email, ok := s.sessionUser(r)
+		if !ok {
 			clearSessionCookie(w)
 			s.redirectToLogin(w, r)
 			return
 		}
 
-		// Valid session; continue request
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), userContextKey{}, email)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -125,26 +160,13 @@ func (s *Server) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// GetAuthenticatedUser extracts username from request cookie if present
-func GetAuthenticatedUser(r *http.Request) string {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		return ""
-	}
-	username, err := verifySignedValue(cookie.Value)
-	if err != nil {
-		return ""
-	}
-	return username
-}
-
 // -----------------------------------------------------------------------------
 // 3. HTTP Auth Handlers
 // -----------------------------------------------------------------------------
 
 // GET /login - Displays login form (or redirects home if logged in)
 func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
-	if username := GetAuthenticatedUser(r); username != "" {
+	if _, ok := s.sessionUser(r); ok {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -155,24 +177,57 @@ func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /login - Processes credentials
+// POST /login - Processes credentials against the database. The stored
+// password is a PBKDF2 hash, never plain text.
 func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
-	username := r.FormValue("username")
+	email := r.FormValue("email")
 	password := r.FormValue("password")
 
-	// Demo authentication check (Replace with real user store validation)
-	if username != "admin" || password != "secret" {
-		w.WriteHeader(http.StatusUnauthorized)
+	wrong := func() {
+		// Returns 200, not 401: htmx 2.x treats 4xx/5xx as errors and does
+		// not swap the response, so the inline error below would never show.
 		Render(w, "login.html", map[string]any{
 			"Title":         "Sign In",
 			"Authenticated": false,
-			"Error":         "Invalid username or password.",
+			"Error":         "Wrong email or password.",
 		})
+	}
+
+	// The same "Wrong email or password." message is shown both for unknown
+	// emails and for bad passwords, so the response does not reveal which
+	// addresses exist.
+	user, err := s.DB.GetUserByEmail(r.Context(), email)
+	if err != nil {
+		// Burn roughly the same time verifying a hash as a wrong password
+		// would, to keep login timing independent of email existence.
+		if h, herr := passwords.Hash(password); herr == nil {
+			passwords.Verify(h, password)
+		}
+		wrong()
 		return
 	}
 
-	// 1. Create session cookie
-	setSessionCookie(w, username)
+	if !user.Active || !passwords.Verify(user.Password, password) {
+		wrong()
+		return
+	}
+
+	// 1. Rotate the session token and store it in the DB, then put the
+	// signed token in the cookie. Because the cookie's token must match the
+	// user row, deleting the database invalidates every existing session.
+	token, err := db.NewSessionToken()
+	if err != nil {
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
+	if err := s.DB.SetUserSessionToken(r.Context(), sqlite.SetUserSessionTokenParams{
+		SessionToken: token,
+		ID:           user.ID,
+	}); err != nil {
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
+	setSessionCookie(w, token)
 
 	// 2. Respond based on caller type
 	if r.Header.Get("HX-Request") == "true" {
@@ -180,7 +235,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		Render(w, "index.html", map[string]any{
 			"Title":         "Dashboard",
 			"Authenticated": true,
-			"Username":      username,
+			"Username":      user.Email,
 		})
 		return
 	}

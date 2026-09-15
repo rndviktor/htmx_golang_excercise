@@ -4,11 +4,15 @@
 package db
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 
 	_ "modernc.org/sqlite"
 
+	"htmx-golang-excercise/internal/env"
+	"htmx-golang-excercise/internal/passwords"
 	sqlcemb "htmx-golang-excercise/internal/sqlc/sqlite"
 	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
@@ -19,6 +23,18 @@ const (
 	DefaultUserID        = 1
 	DefaultServerGroupID = 1
 )
+
+// NewSessionToken returns a fresh random session token (base64url-encoded).
+// Session tokens are stored in the user table; the cookie only carries the
+// signed token, so deleting/recreating the database invalidates every
+// existing session.
+func NewSessionToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
 
 // Open opens (creating if needed) the SQLite database at path, applies the
 // schema, seeds the default user/server group, and returns a handle plus
@@ -90,18 +106,83 @@ func migrate(database *sql.DB) error {
 		}
 	}
 
+	rows3, err := database.Query(`SELECT name FROM pragma_table_info('user') WHERE name = 'masterpass'`)
+	if err != nil {
+		return err
+	}
+	dropMaster := rows3.Next()
+	rows3.Close()
+	if err := rows3.Err(); err != nil {
+		return err
+	}
+	if dropMaster {
+		if _, err := database.Exec(`ALTER TABLE "user" DROP COLUMN masterpass`); err != nil {
+			return err
+		}
+	}
+
+	rows4, err := database.Query(`SELECT name FROM pragma_table_info('user') WHERE name = 'session_token'`)
+	if err != nil {
+		return err
+	}
+	hasToken := rows4.Next()
+	rows4.Close()
+	if err := rows4.Err(); err != nil {
+		return err
+	}
+	if !hasToken {
+		if _, err := database.Exec(`ALTER TABLE "user" ADD COLUMN session_token TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-// seedDefaults creates the demo admin user and its "Servers" group used
-// until real user management exists.
+// seedDefaults creates (or refreshes) the demo user and its "Servers" group
+// used until real user management exists. Credentials come from the .env
+// file (PGHTMX_ADMIN_DEFAULT_EMAIL / PGHTMX_ADMIN_DEFAULT_PASSWORD) and the
+// password is stored as a PBKDF2 hash, never in plain text.
 func seedDefaults(database *sql.DB) error {
-	_, err := database.Exec(`
-		INSERT OR IGNORE INTO "user" (id, email, password, active)
-		VALUES (?, 'admin', 'secret', 1);
+	email := env.Get("PGHTMX_ADMIN_DEFAULT_EMAIL", "admin")
+	password := env.Get("PGHTMX_ADMIN_DEFAULT_PASSWORD", "secret")
 
+	hash, err := passwords.Hash(password)
+	if err != nil {
+		return fmt.Errorf("hash default password: %w", err)
+	}
+
+	// Issued as separate statements: the modernc sqlite driver binds the same
+	// argument list to every statement in a multi-statement Exec, so sharing
+	// one call here would set servergroup.user_id to the email string.
+	if _, err := database.Exec(`
+		INSERT INTO "user" (id, email, password, active)
+		VALUES (?, ?, ?, 1)
+		ON CONFLICT(id) DO UPDATE SET
+			email = excluded.email,
+			password = excluded.password,
+			active = 1;
+	`, DefaultUserID, email, hash); err != nil {
+		return err
+	}
+
+	// A recreated database gets a brand-new session token, which revokes any
+	// session cookie issued against the previous database. On an ordinary
+	// restart the token is kept so sessions survive.
+	token, err := NewSessionToken()
+	if err != nil {
+		return fmt.Errorf("generate session token: %w", err)
+	}
+	if _, err := database.Exec(`
+		UPDATE "user" SET session_token = ?
+		WHERE id = ? AND session_token = '';
+	`, token, DefaultUserID); err != nil {
+		return err
+	}
+
+	_, err = database.Exec(`
 		INSERT OR IGNORE INTO servergroup (id, user_id, name)
 		VALUES (?, ?, 'Servers');
-	`, DefaultUserID, DefaultServerGroupID, DefaultUserID)
+	`, DefaultServerGroupID, DefaultUserID)
 	return err
 }

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS user (
     password VARCHAR(256) NOT NULL,
     active BOOLEAN NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     confirmed_at DATETIME,
-    masterpass VARCHAR(256)
+    session_token VARCHAR(64) NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS servergroup (

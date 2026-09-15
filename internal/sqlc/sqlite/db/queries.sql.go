@@ -157,6 +157,63 @@ func (q *Queries) GetServerByID(ctx context.Context, arg GetServerByIDParams) (S
 	return i, err
 }
 
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, email, password, active, confirmed_at
+FROM "user"
+WHERE email = ?
+LIMIT 1
+`
+
+type GetUserByEmailRow struct {
+	ID          int64        `json:"id"`
+	Email       string       `json:"email"`
+	Password    string       `json:"password"`
+	Active      bool         `json:"active"`
+	ConfirmedAt sql.NullTime `json:"confirmed_at"`
+}
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
+	var i GetUserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Password,
+		&i.Active,
+		&i.ConfirmedAt,
+	)
+	return i, err
+}
+
+const getUserByToken = `-- name: GetUserByToken :one
+SELECT id, email, password, active, confirmed_at
+FROM "user"
+WHERE session_token = ?
+  AND session_token != ''
+LIMIT 1
+`
+
+type GetUserByTokenRow struct {
+	ID          int64        `json:"id"`
+	Email       string       `json:"email"`
+	Password    string       `json:"password"`
+	Active      bool         `json:"active"`
+	ConfirmedAt sql.NullTime `json:"confirmed_at"`
+}
+
+func (q *Queries) GetUserByToken(ctx context.Context, sessionToken string) (GetUserByTokenRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByToken, sessionToken)
+	var i GetUserByTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Password,
+		&i.Active,
+		&i.ConfirmedAt,
+	)
+	return i, err
+}
+
 const getUserWorkspace = `-- name: GetUserWorkspace :one
 SELECT user_id, active_tab_id, layout_metadata, updated_at FROM user_workspaces
 WHERE user_id = ?
@@ -397,5 +454,20 @@ type SaveUserWorkspaceParams struct {
 
 func (q *Queries) SaveUserWorkspace(ctx context.Context, arg SaveUserWorkspaceParams) error {
 	_, err := q.db.ExecContext(ctx, saveUserWorkspace, arg.UserID, arg.ActiveTabID, arg.LayoutMetadata)
+	return err
+}
+
+const setUserSessionToken = `-- name: SetUserSessionToken :exec
+UPDATE "user" SET session_token = ?
+WHERE id = ?
+`
+
+type SetUserSessionTokenParams struct {
+	SessionToken string `json:"session_token"`
+	ID           int64  `json:"id"`
+}
+
+func (q *Queries) SetUserSessionToken(ctx context.Context, arg SetUserSessionTokenParams) error {
+	_, err := q.db.ExecContext(ctx, setUserSessionToken, arg.SessionToken, arg.ID)
 	return err
 }
