@@ -1,84 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <!-- Background Gradient -->
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#1e293b" />
+    <linearGradient id="a" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
     </linearGradient>
-
-    <!-- Elephant Gradient (PostgreSQL Blue) -->
-    <linearGradient id="pgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#336791" />
-      <stop offset="100%" stop-color="#1d4ed8" />
+    <linearGradient id="b" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#336791"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
     </linearGradient>
-
-    <!-- Go Gopher Teal Accent -->
-    <linearGradient id="goGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00ADD8" />
-      <stop offset="100%" stop-color="#0080A3" />
-    </linearGradient>
-
-    <!-- HTMX Dynamic Glow -->
-    <filter id="htmxGlow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="6" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-    </filter>
   </defs>
-
-  <!-- Base Icon Shape (Rounded Container for Clean Favicon Scalability) -->
-  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
-  <rect width="500" height="500" x="6" y="6" rx="106" fill="none" stroke="#334155" stroke-width="6" opacity="0.5" />
-
-  <!-- PostgreSQL Elephant Silhouetted Shell -->
-  <path d="M 280,110 
-           C 200,110 140,160 140,240 
-           C 140,285 158,320 185,350 
-           L 185,410 
-           C 185,420 195,430 205,430 
-           L 245,430 
-           C 255,430 265,420 265,410 
-           L 265,375 
-           C 275,378 285,380 295,380 
-           C 375,380 415,320 415,245 
-           C 415,160 360,110 280,110 Z" 
-        fill="url(#pgGrad)" 
-        opacity="0.9" />
-
-  <!-- Elephant Ear Detail -->
-  <path d="M 270,160 
-           C 230,160 200,190 200,235 
-           C 200,280 230,305 270,305 
-           C 280,305 288,300 295,290 
-           L 295,175 
-           C 288,165 280,160 270,160 Z" 
-        fill="#1e3a8a" 
-        opacity="0.5" />
-
-  <!-- Golang "Go" Speed Lines (Integrated into Ear/Head Structure) -->
-  <path d="M 100,190 L 175,190" stroke="url(#goGrad)" stroke-width="14" stroke-linecap="round" />
-  <path d="M 80,235 L 155,235" stroke="url(#goGrad)" stroke-width="14" stroke-linecap="round" />
-  <path d="M 110,280 L 170,280" stroke="url(#goGrad)" stroke-width="14" stroke-linecap="round" />
-
-  <!-- Gopher Eye Accent inside the Elephant Silhouette -->
-  <circle cx="335" cy="195" r="18" fill="#ffffff" />
-  <circle cx="341" cy="195" r="8" fill="#0f172a" />
-
-  <!-- HTMX Dynamic Synergy Engine (Bottom Right Core Overlay) -->
-  <g transform="translate(250, 260)" filter="url(#htmxGlow)">
-    <!-- HTMX Dark Badge Background -->
-    <rect width="210" height="150" rx="30" fill="#090d16" stroke="url(#goGrad)" stroke-width="6" />
-    
-    <!-- HTMX Text Logo '</>' -->
-    <text x="32" y="102" 
-          font-family="ui-monospace, monospace, 'Courier New', bold" 
-          font-weight="900" 
-          font-size="82" 
-          fill="#00ADD8" 
-          letter-spacing="-6">
-      &lt;/&gt;
-    </text>
-
-    <!-- HTMX Swap Pulse Dot -->
-    <circle cx="172" cy="42" r="10" fill="#38bdf8" />
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#a)"/>
+  <rect width="500" height="500" x="6" y="6" rx="106" fill="none" stroke="#334155" stroke-width="6" opacity=".5"/>
+  <!-- Elephant Body -->
+  <path d="M280 110c-80 0-140 50-140 130 0 45 18 80 45 110v60c0 10 10 20 20 20h40c10 0 20-10 20-20v-35c10 3 20 5 30 5 80 0 120-60 120-135 0-85-55-135-135-135z" fill="url(#b)" opacity=".9"/>
+  <!-- Elephant Ear -->
+  <path d="M270 160c-40 0-70 30-70 75s30 70 70 70c10 0 18-5 25-15V175c-7-10-15-15-25-15z" fill="#1e3a8a" opacity=".5"/>
+  <!-- Go Speed Lines -->
+  <path d="M100 190h75M80 235h75M110 280h60" stroke="#00ADD8" stroke-width="14" stroke-linecap="round"/>
+  <!-- Eye -->
+  <circle cx="335" cy="195" r="18" fill="#fff"/>
+  <circle cx="341" cy="195" r="8" fill="#0f172a"/>
+  <!-- HTMX Badge overlay -->
+  <g transform="translate(250 260)">
+    <rect width="210" height="150" rx="30" fill="#090d16" stroke="#00ADD8" stroke-width="6"/>
+    <!-- Optimized </ > vector path replacing text font overhead -->
+    <path d="M52 50l-22 25 22 25h-10l-22-25 22-25zm37 0l-16 50h-9l16-50zm21 0l22 25-22 25h-10l22-25-22-25z" fill="#00ADD8"/>
+    <circle cx="172" cy="42" r="10" fill="#38bdf8"/>
   </g>
 </svg>
