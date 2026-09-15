@@ -1,16 +1,17 @@
-// CodeMirror 6 SQL editor: syntax highlighting + autocompletion. Loads
-// via esm.sh so every package shares one module graph (no duplicate
+// CodeMirror 6 SQL editor: syntax highlighting + autocompletion. Imports are
+// bare specifiers resolved at build time (scripts/build-editor.mjs) into the
+// single module graph of static/codemirror.bundle.js (no duplicate
 // EditorState instances). Exposes window.SqlEditor (init/value/set/
 // selection/focus/search) used by the classic-script tab logic above.
-import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, placeholder, Decoration } from "https://esm.sh/@codemirror/view@6";
-import { EditorState, StateEffect, StateField } from "https://esm.sh/@codemirror/state@6";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "https://esm.sh/@codemirror/commands@6";
-import { bracketMatching, indentOnInput, syntaxHighlighting, HighlightStyle } from "https://esm.sh/@codemirror/language@6";
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, ifNotIn } from "https://esm.sh/@codemirror/autocomplete@6";
-import { highlightSelectionMatches } from "https://esm.sh/@codemirror/search@6";
-import { sql, PostgreSQL, keywordCompletionSource } from "https://esm.sh/@codemirror/lang-sql@6";
-import { tags } from "https://esm.sh/@lezer/highlight@1";
-import { format } from "/static/js/sql-formatter.js";
+import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, placeholder, Decoration } from "@codemirror/view";
+import { EditorState, StateEffect, StateField } from "@codemirror/state";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { bracketMatching, indentOnInput, syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, ifNotIn } from "@codemirror/autocomplete";
+import { highlightSelectionMatches } from "@codemirror/search";
+import { sql, PostgreSQL, keywordCompletionSource } from "@codemirror/lang-sql";
+import { tags } from "@lezer/highlight";
+import { format } from "./sql-formatter.js";
 
 // Dark theme matching the Tailwind gray-900 palette used elsewhere.
 const editorTheme = EditorView.theme({

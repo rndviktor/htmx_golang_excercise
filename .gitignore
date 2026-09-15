@@ -1,2 +1,3 @@
 \tmp_server.exe
 *.db
+node_modules/
