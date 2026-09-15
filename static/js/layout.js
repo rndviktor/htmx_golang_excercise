@@ -112,7 +112,7 @@ function initScriptResizers(panel) {
             document.addEventListener("mouseup", onUp);
         });
         resizerV.addEventListener("dblclick", () => {
-            leftPane.style.width = "50%";
+            leftPane.style.width = "75%";
             try { localStorage.removeItem(vKey); } catch (err) {}
         });
     }
