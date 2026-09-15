@@ -10,7 +10,7 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, i
 import { highlightSelectionMatches } from "https://esm.sh/@codemirror/search@6";
 import { sql, PostgreSQL, keywordCompletionSource } from "https://esm.sh/@codemirror/lang-sql@6";
 import { tags } from "https://esm.sh/@lezer/highlight@1";
-import { format } from "https://esm.sh/sql-formatter@15";
+import { format } from "/static/js/sql-formatter.js";
 
 // Dark theme matching the Tailwind gray-900 palette used elsewhere.
 const editorTheme = EditorView.theme({
