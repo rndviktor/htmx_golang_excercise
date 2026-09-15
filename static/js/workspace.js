@@ -94,7 +94,7 @@ function restoreWorkspace() {
             waitForTreeRoot(() => applyTreeRestore(), 50);
 
             const openings = (state.tabs || []).map((tab) =>
-                openTab(tab.title, tab.query, tab.server_id, tab.db_name, tab.id));
+                openTab(tab.title, tab.query, tab.server_id, tab.server_name, tab.db_name, tab.id));
 
             await Promise.all(openings);
 

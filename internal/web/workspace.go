@@ -14,12 +14,13 @@ import (
 
 // workspaceTabJSON mirrors one open script tab of a user.
 type workspaceTabJSON struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	ServerID int64  `json:"server_id"`
-	DBName   string `json:"db_name"`
-	Query    string `json:"query"`
-	TabOrder int    `json:"tab_order"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	ServerID   int64  `json:"server_id"`
+	ServerName string `json:"server_name"`
+	DBName     string `json:"db_name"`
+	Query      string `json:"query"`
+	TabOrder   int    `json:"tab_order"`
 }
 
 // workspaceLayoutJSON holds the layout bits that survive a refresh.
@@ -94,13 +95,28 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, t := range tabs {
 		serverID, dbName := decodeConnection(t.ConnectionID)
+
+		// The name travels together with the id so the frontend can label
+		// the tab's connection without a follow-up lookup.
+		serverName := ""
+		if serverID > 0 {
+			srv, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
+				ID:     serverID,
+				UserID: db.DefaultUserID,
+			})
+			if err == nil {
+				serverName = srv.Name
+			}
+		}
+
 		state.Tabs = append(state.Tabs, workspaceTabJSON{
-			ID:       t.ID,
-			Title:    t.Title,
-			ServerID: serverID,
-			DBName:   dbName,
-			Query:    t.QueryText.String,
-			TabOrder: int(t.TabOrder),
+			ID:         t.ID,
+			Title:      t.Title,
+			ServerID:   serverID,
+			ServerName: serverName,
+			DBName:     dbName,
+			Query:      t.QueryText.String,
+			TabOrder:   int(t.TabOrder),
 		})
 	}
 

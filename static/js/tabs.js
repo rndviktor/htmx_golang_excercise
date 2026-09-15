@@ -426,7 +426,7 @@ function copyToEditor(btn) {
     const code = btn.closest(".border").querySelector("code").innerText;
     const serverID = btn.dataset.serverId;
     const dbName = btn.dataset.dbName;
-    openTab("Query", code, serverID, dbName);
+    openTab("Query", code, serverID, serverNameForID(serverID), dbName);
 }
 
 // -----------------------------------------------------------------------------
@@ -434,8 +434,8 @@ function copyToEditor(btn) {
 // -----------------------------------------------------------------------------
 
 // Opens an empty script tab connected to the given database.
-function openQueryToolTab(serverID, dbName) {
-    openTab("Query Tool", "", serverID, dbName);
+function openQueryToolTab(serverID, serverName, dbName) {
+    openTab("Query Tool", "", serverID, serverName, dbName);
 }
 
 // Generates a unique id for a newly opened script tab. GUIDs keep tab
@@ -448,7 +448,7 @@ function newTabId() {
     return "tab-" + (++tabCounter);
 }
 
-function openTab(label, query, serverID, dbName, id) {
+function openTab(label, query, serverID, serverName, dbName, id) {
     if (!id) {
         id = newTabId();
     } else {
@@ -512,7 +512,7 @@ function openTab(label, query, serverID, dbName, id) {
             const connBadge = panel.querySelector("#conn-badge");
             if (connBadge) {
                 connBadge.textContent = serverID && dbName
-                    ? "server " + serverID + " · " + dbName
+                    ? (serverName || "server " + serverID) + " · " + dbName
                     : "";
             }
 
@@ -528,7 +528,7 @@ function openSelectScriptTab(tableURL) {
     fetch(t.url + "/columns-script")
         .then((r) => r.json())
         .then((data) => {
-            openTab("SELECT " + t.tableName, data.query, t.serverID, t.dbName);
+            openTab("SELECT " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
         });
 }
 
@@ -537,7 +537,7 @@ function openCreateScriptTab(tableURL) {
     fetch(t.url + "/create-script")
         .then((r) => { if (!r.ok) throw r; return r.json(); })
         .then((data) => {
-            openTab("CREATE " + t.tableName, data.query, t.serverID, t.dbName);
+            openTab("CREATE " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
         });
 }
 
@@ -546,7 +546,7 @@ function openInsertScriptTab(tableURL) {
     fetch(t.url + "/insert-script")
         .then((r) => { if (!r.ok) throw r; return r.json(); })
         .then((data) => {
-            openTab("INSERT " + t.tableName, data.query, t.serverID, t.dbName);
+            openTab("INSERT " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
         });
 }
 
@@ -555,7 +555,7 @@ function openDeleteScriptTab(tableURL) {
     fetch(t.url + "/delete-script")
         .then((r) => { if (!r.ok) throw r; return r.json(); })
         .then((data) => {
-            openTab("DELETE " + t.tableName, data.query, t.serverID, t.dbName);
+            openTab("DELETE " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
         });
 }
 
@@ -683,7 +683,7 @@ function initTabShortcuts() {
             '#' + ID_TREE_ROOT + ' button[hx-get][hx-target="#' + selectedTreeId + '"]');
         const conn = connectionFromTreeURL(selected ? selected.getAttribute("hx-get") : null);
         if (conn) {
-            openQueryToolTab(conn.serverID, conn.dbName);
+            openQueryToolTab(conn.serverID, conn.serverName, conn.dbName);
         } else {
             openTab("Query Tool");
         }

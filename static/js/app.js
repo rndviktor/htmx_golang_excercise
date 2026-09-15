@@ -29,10 +29,30 @@ function parseServerDBURL(url) {
     return { serverID: parts[3], dbName: parts[5] };
 }
 
-// Returns {serverID, dbName} for a database-scoped URL, otherwise null.
+// Looks up the display name of a registered server from the loaded object
+// tree (server buttons carry hx-get="/api/servers/{id}/..."). The server
+// button renders "[state dot] 🖥️ Name [host line]", so the label is its
+// first non-empty text node with the leading icon token stripped. Returns
+// null when the tree is not rendered yet.
+function serverNameForID(serverID) {
+    if (!serverID) return null;
+    const btn = document.querySelector(
+        '#' + ID_TREE_ROOT + " button[hx-get^='/api/servers/" + serverID + "/']");
+    if (!btn) return null;
+    const label = Array.from(btn.childNodes)
+        .filter((n) => n.nodeType === Node.TEXT_NODE)
+        .map((n) => n.textContent.trim())
+        .find((t) => t.length > 0);
+    return label ? label.replace(/^\S+\s+/, "") : null;
+}
+
+// Returns {serverID, serverName, dbName} for a database-scoped URL,
+// otherwise null. The server name is resolved from the loaded tree so the
+// caller can label connections without an extra lookup.
 function connectionFromTreeURL(url) {
     const conn = parseServerDBURL(url);
     if (!conn.serverID || !conn.dbName) return null;
+    conn.serverName = serverNameForID(conn.serverID);
     return conn;
 }
 
@@ -45,6 +65,7 @@ function tableURLParts(tableURL) {
         url: baseURL,
         tableName: parts.pop(),
         serverID: parts[3],
+        serverName: serverNameForID(parts[3]),
         dbName: parts[5],
     };
 }

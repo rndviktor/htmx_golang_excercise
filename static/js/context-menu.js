@@ -37,7 +37,7 @@ function initContextMenu() {
         qtItem.addEventListener("click", () => {
             const conn = connectionFromTreeURL(currentTableURL);
             if (conn) {
-                openQueryToolTab(conn.serverID, conn.dbName);
+                openQueryToolTab(conn.serverID, conn.serverName, conn.dbName);
             } else {
                 openTab("Query Tool");
             }
