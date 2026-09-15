@@ -854,7 +854,7 @@ func isRowReturning(query string) bool {
 	}
 	// Advance past an optional leading "WITH x AS (...) " CTE to the final
 	// statement keyword.
-	idx := strings.Index(trimmed, " ")
+	idx := strings.IndexAny(trimmed, " \t\n\r")
 	if idx < 0 {
 		idx = len(trimmed)
 	}
