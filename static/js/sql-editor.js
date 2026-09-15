@@ -329,4 +329,57 @@ window.SqlEditor = {
         const view = this.view(panel);
         if (view) view.dispatch({ effects: setSearchMatches.of(Decoration.none) });
     },
+    // Replaces the next match (relative to the cursor, wrapping around) with
+    // `replacement` and re-highlights the remaining matches. Returns the new
+    // match count (0 when the query matches nothing).
+    replaceNext(panel, query, replacement, opts) {
+        const view = this.view(panel);
+        if (!view) return 0;
+        const optsN = opts || {};
+        let matches = findMatches(view.state.doc.toString(), query, optsN);
+        if (!matches.length) {
+            view.dispatch({ effects: setSearchMatches.of(Decoration.none) });
+            return 0;
+        }
+
+        const head = view.state.selection.main.head;
+        let idx = matches.findIndex((m) => m.to > head);
+        if (idx === -1) idx = 0;
+        const m = matches[idx];
+        const insert = String(replacement);
+        view.dispatch({
+            changes: { from: m.from, to: m.to, insert },
+            selection: { anchor: m.from + insert.length },
+            scrollIntoView: true,
+        });
+
+        matches = findMatches(view.state.doc.toString(), query, optsN);
+        view.dispatch({ effects: setSearchMatches.of(matchDecorationSet(matches)) });
+        view.focus();
+        return matches.length;
+    },
+    // Replaces every match of `query` with `replacement` in a single change.
+    // Returns the number of replaced matches (0 when the query matches
+    // nothing).
+    replaceAll(panel, query, replacement, opts) {
+        const view = this.view(panel);
+        if (!view) return 0;
+        const optsN = opts || {};
+        let matches = findMatches(view.state.doc.toString(), query, optsN);
+        if (!matches.length) {
+            view.dispatch({ effects: setSearchMatches.of(Decoration.none) });
+            return 0;
+        }
+
+        const insert = String(replacement);
+        view.dispatch({
+            changes: matches.map((m) => ({ from: m.from, to: m.to, insert })),
+            selection: { anchor: matches[0].from },
+        });
+
+        matches = findMatches(view.state.doc.toString(), query, optsN);
+        view.dispatch({ effects: setSearchMatches.of(matchDecorationSet(matches)) });
+        view.focus();
+        return matches.length;
+    },
 };
