@@ -204,6 +204,9 @@ func (s *Server) handleServerChildren(w http.ResponseWriter, r *http.Request) {
 	}
 
 	folder := func(cid, slug, icon, label, url string) treeNode {
+		if cnt, ok := counts[slug]; ok && cnt == 0 {
+			return treeNode{Icon: icon, Label: label, Disabled: true}
+		}
 		n := expander(cid, icon, label, url)
 		if cnt, ok := counts[slug]; ok && cnt > 0 {
 			n.Badge = strconv.FormatInt(cnt, 10)

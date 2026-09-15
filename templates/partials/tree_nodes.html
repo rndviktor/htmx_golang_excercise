@@ -13,8 +13,8 @@
         <div id="{{ .ID }}" class="ml-4"></div>
     </li>
     {{ else }}
-    <li class="hover:text-blue-400 cursor-pointer"{{ if .Menu }} data-tree-menu="{{ .Menu }}"{{ end }}>{{ .Icon }} {{ .Label }}</li>
+    <li{{ if .Disabled }} class="opacity-60 text-gray-500 cursor-default select-none pointer-events-none"{{ else }} class="hover:text-blue-400 cursor-pointer"{{ end }}{{ if .Menu }} data-tree-menu="{{ .Menu }}"{{ end }}>{{ .Icon }} {{ .Label }}</li>
     {{ end }}{{ else }}
-    <li class="text-xs text-gray-500">{{ $.EmptyMessage }}</li>
+    <li class="opacity-60 text-gray-500 cursor-default select-none pointer-events-none">{{ $.EmptyMessage }}</li>
     {{ end }}
 </ul>

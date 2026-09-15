@@ -25,6 +25,9 @@ type treeNode struct {
 	Sub   string // optional secondary line under the label
 	URL   string // htmx GET url for lazy children; empty means leaf node
 	Menu  string // context menu kind for right click (e.g. "table"); empty = none
+	// Disabled marks a node that has nothing beneath it (e.g. an empty
+	// category folder). It renders grayed out and cannot be expanded.
+	Disabled bool
 	// State is the live connection status of a server node: "on" shows a
 	// green dot, "off" a red dot, and any other value (or empty) shows none.
 	State string
@@ -62,14 +65,20 @@ func categoryFolders(prefix, baseURL string, cats []category) []treeNode {
 }
 
 // categoryFoldersWithCounts is categoryFolders but tags each expander with a
-// badge showing the live item count for that category. counts is keyed by
-// category slug; categories with a count of zero (or missing from the map)
-// render without a badge.
+// badge showing the live item count for that category. categories with a
+// count of zero render as grayed-out, non-expanding leaves instead of
+// expanders; categories missing from the map (unknown count) render as plain
+// expanders without a badge. counts is keyed by category slug.
 func categoryFoldersWithCounts(prefix, baseURL string, cats []category, counts map[string]int64) []treeNode {
 	nodes := make([]treeNode, 0, len(cats))
 	for _, c := range cats {
+		cnt, counted := counts[c.Slug]
+		if counted && cnt == 0 {
+			nodes = append(nodes, treeNode{Icon: c.Icon, Label: c.Label, Disabled: true})
+			continue
+		}
 		n := expander(prefix+"-"+c.Slug, c.Icon, c.Label, baseURL+"/"+c.Slug)
-		if cnt, ok := counts[c.Slug]; ok && cnt > 0 {
+		if counted && cnt > 0 {
 			n.Badge = strconv.FormatInt(cnt, 10)
 		}
 		nodes = append(nodes, n)
