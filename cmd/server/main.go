@@ -28,11 +28,15 @@ func main() {
 		addr = ":8080"
 	}
 
+	// WriteTimeout must stay disabled (0) because the monitoring SSE streams
+	// keep the response open indefinitely; an absolute write deadline makes
+	// the server abort those connections mid-chunk
+	// (net::ERR_INCOMPLETE_CHUNKED_ENCODING). ReadHeaderTimeout still guards
+	// against slow/never-completing request headers.
 	httpServer := &http.Server{
-		Addr:         addr,
-		Handler:      srv.Routes(),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr:              addr,
+		Handler:           srv.Routes(),
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	log.Printf("Server started on http://localhost%s", addr)
