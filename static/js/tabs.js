@@ -109,6 +109,15 @@ function formConnectionParams(form) {
 // Query execution
 // -----------------------------------------------------------------------------
 
+// Formats (indents) the SQL in the active script editor: the selection only
+// when text is selected, otherwise the whole document.
+function formatSql(btn) {
+    const panel = btn.closest("[id^='tab-content']");
+    if (panel && window.SqlEditor && window.SqlEditor.format) {
+        window.SqlEditor.format(panel);
+    }
+}
+
 function executeQuery(btn, page) {
     const panel = btn.closest("[id^='tab-content']");
     if (!panel) return;

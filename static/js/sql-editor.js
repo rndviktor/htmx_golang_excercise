@@ -10,6 +10,7 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, i
 import { highlightSelectionMatches } from "https://esm.sh/@codemirror/search@6";
 import { sql, PostgreSQL, keywordCompletionSource } from "https://esm.sh/@codemirror/lang-sql@6";
 import { tags } from "https://esm.sh/@lezer/highlight@1";
+import { format } from "https://esm.sh/sql-formatter@15";
 
 // Dark theme matching the Tailwind gray-900 palette used elsewhere.
 const editorTheme = EditorView.theme({
@@ -287,6 +288,43 @@ window.SqlEditor = {
         if (!view) return;
         view.focus();
         if (sel) view.dispatch({ selection: { anchor: sel.from, head: sel.to } });
+    },
+    // Formats the SQL indentation of the editor document (or the current
+    // selection only, when one is present) using sql-formatter. Keyword and
+    // identifier casing are preserved; only whitespace/indentation moves.
+    format(panel) {
+        const view = this.view(panel);
+        if (!view) return;
+        const doc = view.state.doc.toString();
+        if (!doc.trim()) return;
+        const sel = view.state.selection.main;
+        const selText = doc.substring(sel.from, sel.to);
+        let formatted;
+        try {
+            formatted = format(selText || doc, {
+                language: "postgresql",
+                keywordCase: "preserve",
+                identifierCase: "preserve",
+                dataTypeCase: "preserve",
+                functionCase: "preserve",
+                logicalOperatorNewline: "before",
+                linesBetweenQueries: 2,
+                tabWidth: 4,
+                useTabs: false,
+            });
+        } catch (err) {
+            console.error("SQL format failed:", err);
+            return;
+        }
+        if (selText) {
+            view.dispatch({
+                changes: { from: sel.from, to: sel.to, insert: formatted },
+                selection: { anchor: sel.from, head: sel.from + formatted.length },
+            });
+        } else {
+            view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: formatted } });
+        }
+        view.focus();
     },
     // Highlights every match of `query` in the editor. opts: {caseSensitive,
     // regex}. Returns the number of matches.
