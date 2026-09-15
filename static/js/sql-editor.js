@@ -1,13 +1,13 @@
 // CodeMirror 6 SQL editor: syntax highlighting + autocompletion. Loads
 // via esm.sh so every package shares one module graph (no duplicate
 // EditorState instances). Exposes window.SqlEditor (init/value/set/
-// selection/focus) used by the classic-script tab logic above.
-import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, placeholder } from "https://esm.sh/@codemirror/view@6";
-import { EditorState } from "https://esm.sh/@codemirror/state@6";
+// selection/focus/search) used by the classic-script tab logic above.
+import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, placeholder, Decoration } from "https://esm.sh/@codemirror/view@6";
+import { EditorState, StateEffect, StateField } from "https://esm.sh/@codemirror/state@6";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "https://esm.sh/@codemirror/commands@6";
 import { bracketMatching, indentOnInput, syntaxHighlighting, HighlightStyle } from "https://esm.sh/@codemirror/language@6";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, ifNotIn } from "https://esm.sh/@codemirror/autocomplete@6";
-import { highlightSelectionMatches, searchKeymap } from "https://esm.sh/@codemirror/search@6";
+import { highlightSelectionMatches } from "https://esm.sh/@codemirror/search@6";
 import { sql, PostgreSQL, keywordCompletionSource } from "https://esm.sh/@codemirror/lang-sql@6";
 import { tags } from "https://esm.sh/@lezer/highlight@1";
 
@@ -27,6 +27,7 @@ const editorTheme = EditorView.theme({
     ".cm-activeLine": { backgroundColor: "rgba(75, 85, 99, 0.20)" },
     ".cm-gutters": { backgroundColor: "#1f2937", color: "#6b7280", borderRight: "1px solid #374151" },
     ".cm-activeLineGutter": { backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#e5e7eb" },
+    ".cm-find-match": { backgroundColor: "rgba(250, 204, 21, 0.30)", borderRadius: "2px" },
     "&.cm-focused": { outline: "none" },
 }, { dark: true });
 
@@ -134,6 +135,63 @@ function dbSchemaSource(context) {
 
 const schemaCompletion = ifNotIn(["QuotedIdentifier", "String", "LineComment", "BlockComment"], dbSchemaSource);
 
+// --- Find widget search -----------------------------------------------------
+// All live matches are highlighted with a soft yellow mark; the current
+// match is the primary selection (navigated by SqlEditor.searchStep). The
+// decoration set is stored in a StateField so dispatching never touches
+// the undo history or triggers a save.
+
+const setSearchMatches = StateEffect.define();
+const searchMatchMark = Decoration.mark({ class: "cm-find-match" });
+
+function matchDecorationSet(matches) {
+    return Decoration.set(matches.map((m) => searchMatchMark.range(m.from, m.to)));
+}
+
+const searchMatchesField = StateField.define({
+    create: () => Decoration.none,
+    update(matches, tr) {
+        if (tr.docChanged) matches = matches.map(tr.changes);
+        for (const effect of tr.effects) {
+            if (effect.is(setSearchMatches)) matches = effect.value;
+        }
+        return matches;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+});
+
+// Returns every {from, to} offset matching `query` in `text`. The regex is
+// matched with the given case sensitivity; invalid or zero-length regex
+// matches yield no results rather than an infinite loop.
+function findMatches(text, query, opts) {
+    const matches = [];
+    if (!query) return matches;
+    const caseSensitive = !!(opts && opts.caseSensitive);
+    if (opts && opts.regex) {
+        let re;
+        try {
+            re = new RegExp(query, caseSensitive ? "g" : "gi");
+        } catch (e) {
+            return matches;
+        }
+        let m;
+        while ((m = re.exec(text))) {
+            if (m[0] === "") break;
+            matches.push({ from: m.index, to: m.index + m[0].length });
+            if (re.lastIndex === m.index) re.lastIndex++;
+        }
+    } else {
+        const needle = caseSensitive ? query : query.toLowerCase();
+        const hay = caseSensitive ? text : text.toLowerCase();
+        let i = 0;
+        while ((i = hay.indexOf(needle, i)) !== -1) {
+            matches.push({ from: i, to: i + needle.length });
+            i += needle.length;
+        }
+    }
+    return matches;
+}
+
 function runCurrentQuery(panel) {
     const execBtn = panel.querySelector('[onclick="executeQuery(this)"]');
     if (execBtn && typeof window.executeQuery === "function") window.executeQuery(execBtn);
@@ -157,6 +215,7 @@ function editorExtensions(panel) {
         highlightSelectionMatches(),
         syntaxHighlighting(sqlHighlight),
         editorTheme,
+        searchMatchesField,
         EditorState.allowMultipleSelections.of(true),
         EditorView.updateListener.of((update) => {
             if (update.docChanged && typeof window.scheduleSave === "function") window.scheduleSave();
@@ -164,7 +223,6 @@ function editorExtensions(panel) {
         keymap.of([
             ...closeBracketsKeymap,
             ...defaultKeymap,
-            ...searchKeymap,
             ...historyKeymap,
             ...completionKeymap,
             indentWithTab,
@@ -229,5 +287,46 @@ window.SqlEditor = {
         if (!view) return;
         view.focus();
         if (sel) view.dispatch({ selection: { anchor: sel.from, head: sel.to } });
+    },
+    // Highlights every match of `query` in the editor. opts: {caseSensitive,
+    // regex}. Returns the number of matches.
+    search(panel, query, opts) {
+        const view = this.view(panel);
+        if (!view) return 0;
+        const matches = findMatches(view.state.doc.toString(), query, opts || {});
+        view.dispatch({ effects: setSearchMatches.of(matchDecorationSet(matches)) });
+        return matches.length;
+    },
+    // Highlights the matches of `query` and moves the primary selection to
+    // the previous/next one (dir: -1 or +1, wrapping around the ends).
+    searchStep(panel, query, opts, dir) {
+        const view = this.view(panel);
+        if (!view) return;
+        const matches = findMatches(view.state.doc.toString(), query, opts || {});
+        view.dispatch({ effects: setSearchMatches.of(matchDecorationSet(matches)) });
+        if (!matches.length) return;
+
+        const head = view.state.selection.main.head;
+        let idx;
+        if (dir > 0) {
+            idx = matches.findIndex((m) => m.to > head);
+            if (idx === -1) idx = 0;
+        } else {
+            idx = matches.length - 1;
+            for (let i = matches.length - 1; i >= 0; i--) {
+                if (matches[i].to < head) { idx = i; break; }
+            }
+        }
+        const target = matches[idx];
+        view.dispatch({
+            selection: { anchor: target.from, head: target.to },
+            scrollIntoView: true,
+        });
+        view.focus();
+    },
+    // Removes all find-widget highlights.
+    clearSearch(panel) {
+        const view = this.view(panel);
+        if (view) view.dispatch({ effects: setSearchMatches.of(Decoration.none) });
     },
 };
