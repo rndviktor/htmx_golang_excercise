@@ -6,23 +6,54 @@
       onclick="executeQuery(this)"
       title="Execute Query (F5)"
       class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
-      &#9654;
+      <span class="inline-block scale-[1.5]">&#9654;</span>
     </button>
     <button title="Stop"
       class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
-      &#9724;
+      <span class="inline-block scale-[1.5]">&#9724;</span>
     </button>
     <button
       onclick="executeExplain(this, false)"
       title="Explain query (EXPLAIN)"
-      class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
-      Explain
+      class="ml-[1em] px-2 py-1 text-blue-400 hover:text-blue-300 hover:bg-gray-700 border border-gray-600 rounded text-sm inline-flex items-center justify-center">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-[27px] h-[27px]">
+        <rect x="18" y="10" width="68" height="78" rx="8" />
+        <line x1="28" y1="20" x2="76" y2="20" />
+        <rect x="28" y="30" width="30" height="48" rx="4" />
+        <line x1="38" y1="40" x2="68" y2="40" />
+        <line x1="38" y1="50" x2="68" y2="50" />
+        <line x1="38" y1="60" x2="68" y2="60" />
+        <line x1="38" y1="70" x2="68" y2="70" />
+        <line x1="58" y1="45" x2="78" y2="45" />
+        <line x1="58" y1="55" x2="78" y2="55" />
+      </svg>
     </button>
     <button
       onclick="executeExplain(this, true)"
       title="Explain with timing and actual rows (EXPLAIN ANALYZE)"
-      class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
-      Explain Analyse
+      class="px-2 py-1 text-blue-400 hover:text-blue-300 hover:bg-gray-700 border border-gray-600 rounded text-sm inline-flex items-center justify-center">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" stroke="currentColor"
+           stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-[27px] h-[27px]">
+        <path d="M 39 21 C 25 21 19 33 21 48 C 23 53 28 54 31 52 Q 35 50 35 45"/>
+        <path d="M 76 38 C 76 26 64 18 48 18 C 39 18 36 28 36 44 C 36 46 35.294 49.132 38.294 50.132"/>
+        <circle cx="48" cy="34" r="2.2" fill="currentColor" stroke="none"/>
+        <polyline points="45 46, 25 58, 40 57"/>
+        <circle cx="68" cy="62" r="21"/>
+        <line x1="64" y1="36" x2="72" y2="36"/>
+        <line x1="68" y1="36" x2="68" y2="41"/>
+        <line x1="80" y1="43" x2="84" y2="39" stroke-width="2.5"/>
+        <line x1="68" y1="45" x2="68" y2="47" stroke-width="2"/>
+        <line x1="68" y1="77" x2="68" y2="79" stroke-width="2"/>
+        <line x1="51" y1="62" x2="53" y2="62" stroke-width="2"/>
+        <line x1="83" y1="62" x2="85" y2="62" stroke-width="2"/>
+        <line x1="56" y1="50" x2="57.5" y2="51.5" stroke-width="2"/>
+        <line x1="78.5" y1="72.5" x2="80" y2="74" stroke-width="2"/>
+        <line x1="56" y1="74" x2="57.5" y2="72.5" stroke-width="2"/>
+        <circle cx="68" cy="62" r="1.8" fill="currentColor"/>
+        <line x1="68" y1="62" x2="76" y2="54" stroke-width="3"/>
+        <path d="M 36.461 57.996 C 36.461 57.996 35.347 76.251 37.952 80.384 C 39.491 82.825 42.765 84.212 44.776 84.222 C 46.361 84.229 49.041 81.876 49.041 81.876"/>
+      </svg>
     </button>
     <span id="conn-badge" class="ml-auto text-xs text-gray-500 font-mono select-none"></span>
   </div>
