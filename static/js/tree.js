@@ -46,6 +46,56 @@ function expandTreeContainer(id) {
         .catch(() => false);
 }
 
+// Refreshes one lazily-loaded tree node in place: re-fetches its children and
+// then re-expands every descendant that was expanded before the refresh, so
+// the previously visible subtree stays open and is re-populated. el is the
+// node's <li> element carrying the expand button. Resolves with true when the
+// node was refreshed, false otherwise.
+function refreshTreeNode(el) {
+    const btn = el.querySelector("button[hx-get]");
+    if (!btn) return Promise.resolve(false);
+    const target = btn.getAttribute("hx-target");
+    const container = target && document.querySelector(target);
+    if (!container) return Promise.resolve(false);
+
+    // Remember which descendant containers are currently expanded so they can
+    // be re-fetched after the node's children are replaced in place.
+    const expanded = [];
+    container.querySelectorAll("[id]").forEach((c) => {
+        if (c.childElementCount > 0) expanded.push(c.id);
+    });
+
+    const url = btn.getAttribute("hx-get");
+    return fetch(url)
+        .then((r) => { if (!r.ok) throw r; return r.text(); })
+        .then((html) => {
+            container.innerHTML = html;
+            if (window.htmx && htmx.process) htmx.process(container);
+
+            // Re-expand previously expanded descendants one range at a time,
+            // waiting for a parent before its expanded children can load.
+            const remaining = expanded.slice();
+            function step() {
+                const pending = remaining.slice();
+                remaining.length = 0;
+                let progressed = false;
+                let chain = Promise.resolve();
+                pending.forEach((id) => {
+                    chain = chain.then(() =>
+                        expandTreeContainer(id).then((done) => {
+                            if (done) progressed = true;
+                            else remaining.push(id);
+                        }));
+                });
+                chain.then(() => {
+                    if (progressed && remaining.length > 0) step();
+                });
+            }
+            step();
+        })
+        .catch(() => false);
+}
+
 // Re-expands the saved tree state after a page refresh. Parent nodes
 // are fetched before children by retrying in rounds until no pending
 // node can be expanded, then the saved selection is highlighted.

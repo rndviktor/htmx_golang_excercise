@@ -1,6 +1,5 @@
 // -----------------------------------------------------------------------------
 // Right-click context menu for tree nodes carrying [data-tree-menu].
-// Purely visual for now: items are placeholders without server actions.
 // -----------------------------------------------------------------------------
 function initContextMenu() {
     const menu = document.getElementById("ctx-menu");
@@ -31,6 +30,19 @@ function initContextMenu() {
         const btn = el.querySelector("button[hx-get]");
         if (btn) currentTableURL = btn.getAttribute("hx-get");
 
+        // "Refresh" re-fetches the node's children. The node stays expanded and
+        // previously expanded descendants are re-populated as well.
+        const refreshItem = menuItem("Refresh", false);
+        refreshItem.addEventListener("click", () => {
+            const btn = el.querySelector("button[hx-get]");
+            if (!btn || !btn.getAttribute("hx-target")) {
+                openTab("Refresh");
+            } else {
+                refreshTreeNode(el);
+            }
+        });
+        menu.appendChild(refreshItem);
+
         // "Query Tool" opens an empty script tab connected to the
         // node's database (valid for database, schema and table).
         const qtItem = menuItem("Query Tool", false);
@@ -43,8 +55,6 @@ function initContextMenu() {
             }
         });
         menu.appendChild(qtItem);
-
-        menu.appendChild(menuItem("Delete", true));
 
         // The "Scripts" submenu generates DDL/DML scripts. Tables get
         // the full set, views get CREATE, INSERT and SELECT.
