@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ if .Title }}{{ .Title }}{{ else }}Admin{{ end }}</title>
+    <title>{{ if .Title }}{{ .Title }}{{ else }}Pg HTMX Admin{{ end }}</title>
     <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
     <!-- Load htmx & CSS -->
     <script src="https://unpkg.com/htmx.org@2.0.2"></script>
@@ -67,7 +67,7 @@
         
         <!-- Header / Server Switcher -->
         <header class="w-full bg-gray-800 border-b border-gray-700 flex justify-between items-center p-4">
-            <span class="font-bold text-lg text-blue-400">Postgres Admin</span>
+            <span class="font-bold text-lg text-blue-400">Pg HTMX Admin</span>
             <button hx-post="/logout" 
                     hx-target="#app-root" 
                     hx-select="#app-root"
