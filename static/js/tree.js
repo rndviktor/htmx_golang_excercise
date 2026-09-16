@@ -25,6 +25,20 @@ function highlightTreeSelection() {
     });
 }
 
+// Fetches a tree fragment and injects it into a container, running htmx
+// processing on the injected markup. Resolves true on success, false on any
+// network/HTTP error so callers can react without try/catch.
+function fetchInto(container, url) {
+    return fetch(url)
+        .then((r) => { if (!r.ok) throw r; return r.text(); })
+        .then((html) => {
+            container.innerHTML = html;
+            if (window.htmx && htmx.process) htmx.process(container);
+            return true;
+        })
+        .catch(() => false);
+}
+
 // Expands one lazily-loaded tree node by fetching its children exactly
 // like htmx would (the button and its container are siblings).
 // Resolves with true when the node was (or already is) expanded,
@@ -35,15 +49,32 @@ function expandTreeContainer(id) {
     if (!container) return Promise.resolve(false);
     const btn = container.previousElementSibling;
     if (!btn || !btn.hasAttribute("hx-get")) return Promise.resolve(false);
-    const url = btn.getAttribute("hx-get");
-    return fetch(url)
-        .then((r) => { if (!r.ok) throw r; return r.text(); })
-        .then((html) => {
-            container.innerHTML = html;
-            if (window.htmx && htmx.process) htmx.process(container);
-            return true;
-        })
-        .catch(() => false);
+    return fetchInto(container, btn.getAttribute("hx-get"));
+}
+
+// Expands a list of tree-node container ids in dependency order: a parent
+// must be open before its children can load, so ids that cannot be expanded
+// yet are retried in further rounds until no node makes progress. Resolves
+// once expansion has converged.
+function expandRanges(ids) {
+    const remaining = ids.slice();
+    function step() {
+        const pending = remaining.slice();
+        remaining.length = 0;
+        let progressed = false;
+        let chain = Promise.resolve();
+        pending.forEach((id) => {
+            chain = chain.then(() =>
+                expandTreeContainer(id).then((done) => {
+                    if (done) progressed = true;
+                    else remaining.push(id);
+                }));
+        });
+        return chain.then(() => {
+            if (progressed && remaining.length > 0) return step();
+        });
+    }
+    return step();
 }
 
 // Switches the status dot of a server tree node (el is the server's <li>).
@@ -95,42 +126,14 @@ function refreshTreeNode(el) {
     let url = btn.getAttribute("hx-get");
     if (kind === "server") url = url.replace(/\/children$/, "/reconnect");
 
-    return fetch(url)
-        .then((r) => { if (!r.ok) throw r; return r.text(); })
-        .then((html) => {
-            container.innerHTML = html;
-            if (window.htmx && htmx.process) htmx.process(container);
-
-            // A reconnected server turns its dot green; a failed reconnect
-            // attemp leaves it red (unavailable, and probed again at the next
-            // application start).
-            if (kind === "server") {
-                setServerDot(el,
-                    container.querySelector("ul button[hx-get]") ? "on" : "off");
-            }
-
-            // Re-expand previously expanded descendants one range at a time,
-            // waiting for a parent before its expanded children can load.
-            const remaining = expanded.slice();
-            function step() {
-                const pending = remaining.slice();
-                remaining.length = 0;
-                let progressed = false;
-                let chain = Promise.resolve();
-                pending.forEach((id) => {
-                    chain = chain.then(() =>
-                        expandTreeContainer(id).then((done) => {
-                            if (done) progressed = true;
-                            else remaining.push(id);
-                        }));
-                });
-                chain.then(() => {
-                    if (progressed && remaining.length > 0) step();
-                });
-            }
-            step();
-        })
-        .catch(() => false);
+    return fetchInto(container, url).then((ok) => {
+        // A reconnected server turns its dot green; a failed attempt leaves it
+        // red (unavailable, and probed again at the next application start).
+        if (kind === "server" && ok) {
+            setServerDot(el, container.querySelector("ul button[hx-get]") ? "on" : "off");
+        }
+        return ok ? expandRanges(expanded).then(() => true) : false;
+    });
 }
 
 // Re-expands the saved tree state after a page refresh. Parent nodes
@@ -148,34 +151,16 @@ function applyTreeRestore() {
         remaining.push(state.selected_tree);
     }
 
-    function step() {
-        const pending = remaining.slice();
-        remaining.length = 0;
-        let progressed = false;
-        let chain = Promise.resolve();
-        pending.forEach((id) => {
-            chain = chain.then(() =>
-                expandTreeContainer(id).then((done) => {
-                    if (done) progressed = true;
-                    else remaining.push(id);
-                }));
-        });
-        chain.then(() => {
-            if (progressed && remaining.length > 0) {
-                step();
-            } else {
-                if (state.selected_tree) selectedTreeId = state.selected_tree;
-                highlightTreeSelection();
-                // Selecting a database (or anything below it) via the
-                // restored workspace should show monitoring, just like
-                // a real click.
-                const btn = document.querySelector(
-                    '#' + ID_TREE_ROOT + ' button[hx-get][hx-target="#' + selectedTreeId + '"]');
-                if (btn) updateDashboardForTreeSelection(btn);
-            }
-        });
-    }
-    step();
+    expandRanges(remaining).then(() => {
+        if (state.selected_tree) selectedTreeId = state.selected_tree;
+        highlightTreeSelection();
+        // Selecting a database (or anything below it) via the
+        // restored workspace should show monitoring, just like
+        // a real click.
+        const btn = document.querySelector(
+            '#' + ID_TREE_ROOT + ' button[hx-get][hx-target="#' + selectedTreeId + '"]');
+        if (btn) updateDashboardForTreeSelection(btn);
+    });
 }
 
 // Waits (polling) until the root tree node exists, i.e. the tree has

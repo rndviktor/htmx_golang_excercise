@@ -22,6 +22,21 @@ function initContextMenu() {
         return b;
     }
 
+    function divider() {
+        const d = document.createElement("div");
+        d.className = "my-1 border-t border-gray-700";
+        return d;
+    }
+
+    // Table/view script labels mapped to their tab-openers, so the menu
+    // items do not need a hand-written if/else chain.
+    const SCRIPT_OPENERS = {
+        "CREATE Script": openCreateScriptTab,
+        "DELETE Script": openDeleteScriptTab,
+        "INSERT Script": openInsertScriptTab,
+        "SELECT Script": openSelectScriptTab,
+    };
+
     function openMenu(x, y, el) {
         menu.innerHTML = "";
         currentTableURL = null;
@@ -34,7 +49,6 @@ function initContextMenu() {
         // previously expanded descendants are re-populated as well.
         const refreshItem = menuItem("Refresh", false);
         refreshItem.addEventListener("click", () => {
-            const btn = el.querySelector("button[hx-get]");
             if (!btn || !btn.getAttribute("hx-target")) {
                 openTab("Refresh");
             } else {
@@ -62,9 +76,7 @@ function initContextMenu() {
         // The two reconnecting actions go through /reconnect and turn the
         // dot green on success.
         if (currentMenuKind === "server") {
-            const divider = document.createElement("div");
-            divider.className = "my-1 border-t border-gray-700";
-            menu.appendChild(divider);
+            menu.appendChild(divider());
 
             const state = el.getAttribute("data-tree-state");
 
@@ -72,7 +84,6 @@ function initContextMenu() {
                 const discItem = menuItem("Disconnect from server", true);
                 discItem.addEventListener("click", () => {
                     const serverID = parseServerDBURL(currentTableURL).serverID;
-                    const btn = el.querySelector("button[hx-get]");
                     const target = btn && btn.getAttribute("hx-target");
                     if (target) {
                         const container = document.querySelector(target);
@@ -87,8 +98,8 @@ function initContextMenu() {
                 });
                 menu.appendChild(discItem);
             } else {
-                const label = state === "off" ? "Try to reconnect" : "Connect";
-                const item = menuItem(label, false);
+                // Gray (disconnected by me) -> Connect, red (unavailable) -> retry.
+                const item = menuItem(state === "off" ? "Try to reconnect" : "Connect", false);
                 item.addEventListener("click", () => refreshTreeNode(el));
                 menu.appendChild(item);
             }
@@ -97,9 +108,7 @@ function initContextMenu() {
         // The "Scripts" submenu generates DDL/DML scripts. Tables get
         // the full set, views get CREATE, INSERT and SELECT.
         if (currentMenuKind === "table" || currentMenuKind === "view") {
-            const divider = document.createElement("div");
-            divider.className = "my-1 border-t border-gray-700";
-            menu.appendChild(divider);
+            menu.appendChild(divider());
 
             const row = document.createElement("div");
             row.className = "relative group";
@@ -108,28 +117,21 @@ function initContextMenu() {
             trigger.innerHTML = '<span>Scripts</span><span class="text-xs text-gray-500">\u25B8</span>';
             const sub = document.createElement("div");
             sub.className = "absolute left-full top-0 hidden group-hover:block bg-gray-800 border border-gray-600 rounded shadow-xl py-1 min-w-[12rem]";
-            const scripts = currentMenuKind === "table"
-                ? ["CREATE Script", "DELETE Script", "INSERT Script",
-                   "SELECT Script", "UPDATE Script"]
+            const labels = currentMenuKind === "table"
+                ? ["CREATE Script", "DELETE Script", "INSERT Script", "SELECT Script", "UPDATE Script"]
                 : ["CREATE Script", "INSERT Script", "SELECT Script"];
-            scripts.forEach(
-                (label) => {
-                    const item = menuItem(label, false);
-                    item.addEventListener("click", () => {
-                        if (label === "SELECT Script" && currentTableURL) {
-                            openSelectScriptTab(currentTableURL);
-                        } else if (label === "CREATE Script" && currentTableURL) {
-                            openCreateScriptTab(currentTableURL);
-                        } else if (label === "INSERT Script" && currentTableURL) {
-                            openInsertScriptTab(currentTableURL);
-                        } else if (label === "DELETE Script" && currentTableURL) {
-                            openDeleteScriptTab(currentTableURL);
-                        } else {
-                            openTab(label);
-                        }
-                    });
-                    sub.appendChild(item);
+            labels.forEach((label) => {
+                const item = menuItem(label, false);
+                item.addEventListener("click", () => {
+                    const open = SCRIPT_OPENERS[label];
+                    if (open && currentTableURL) {
+                        open(currentTableURL);
+                    } else {
+                        openTab(label);
+                    }
                 });
+                sub.appendChild(item);
+            });
             row.append(trigger, sub);
             menu.appendChild(row);
         }
