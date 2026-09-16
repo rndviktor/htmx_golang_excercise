@@ -47,21 +47,24 @@ function expandTreeContainer(id) {
 }
 
 // Switches the status dot of a server tree node (el is the server's <li>).
-// state is "on" (green) or "gray" (deliberately disconnected). The gray dot
-// uses an inline background color because the precompiled tailwind.css does
-// not carry a gray filler class for this dot. The state is also mirrored on
-// the <li> via data-tree-state so the context menu does not depend on the
-// dot's visual color.
+// state is "on" (green, connected), "off" (red, unavailable) or "gray"
+// (deliberately disconnected, shown as a hollow gray circle). Styling is
+// inline/class-based because the precompiled tailwind.css only carries the
+// green and red fillers. The state is also mirrored on the <li> via
+// data-tree-state so the context menu does not depend on the dot's visual.
 function setServerDot(el, state) {
     el.setAttribute("data-tree-state", state);
     const dot = el.querySelector("button span.rounded-full");
     if (!dot) return;
     dot.classList.remove("bg-green-500", "bg-red-500");
+    dot.style.border = "";
+    dot.style.backgroundColor = "";
     if (state === "on") {
-        dot.style.backgroundColor = "";
         dot.classList.add("bg-green-500");
+    } else if (state === "off") {
+        dot.classList.add("bg-red-500");
     } else {
-        dot.style.backgroundColor = "#94a3b8";
+        dot.style.border = "2px solid #94a3b8";
     }
 }
 
@@ -98,11 +101,12 @@ function refreshTreeNode(el) {
             container.innerHTML = html;
             if (window.htmx && htmx.process) htmx.process(container);
 
-            // A reconnected server turns its dot green again; a failed
-            // reconnect leaves the dot as it was (gray when deliberately
-            // disconnected, red when unavailable).
-            if (kind === "server" && container.querySelector("ul button[hx-get]")) {
-                setServerDot(el, "on");
+            // A reconnected server turns its dot green; a failed reconnect
+            // attemp leaves it red (unavailable, and probed again at the next
+            // application start).
+            if (kind === "server") {
+                setServerDot(el,
+                    container.querySelector("ul button[hx-get]") ? "on" : "off");
             }
 
             // Re-expand previously expanded descendants one range at a time,

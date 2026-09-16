@@ -317,6 +317,11 @@ func (s *Server) handleServerReconnect(w http.ResponseWriter, r *http.Request) {
 	connectCtx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
 	if s.ensureServerConnection(connectCtx, id) == nil {
+		// The reconnection attempt failed: the server is no longer
+		// "disconnected by the user" but simply unavailable, so it is probed
+		// again (including on the next application start) instead of staying
+		// gray until somebody disconnects it again.
+		s.setDisconnected(id, false)
 		s.renderServerUnavailable(w)
 		return
 	}
