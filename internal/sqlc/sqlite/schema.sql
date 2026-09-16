@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS server (
     ssh_password VARCHAR(256),
     ssh_keyfile VARCHAR(256),
     shared BOOLEAN DEFAULT 0 CHECK (shared IN (0, 1)),
+    disconnected BOOLEAN NOT NULL DEFAULT 0 CHECK (disconnected IN (0, 1)),
     FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE,
     FOREIGN KEY (servergroup_id) REFERENCES servergroup(id) ON DELETE CASCADE
 );

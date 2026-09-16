@@ -153,6 +153,23 @@ func migrate(database *sql.DB) error {
 		}
 	}
 
+	// disconnected tracks servers the user deliberately disconnected from
+	// so that state survives across application restarts.
+	rows6, err := database.Query(`SELECT name FROM pragma_table_info('server') WHERE name = 'disconnected'`)
+	if err != nil {
+		return err
+	}
+	hasDisconnected := rows6.Next()
+	rows6.Close()
+	if err := rows6.Err(); err != nil {
+		return err
+	}
+	if !hasDisconnected {
+		if _, err := database.Exec(`ALTER TABLE server ADD COLUMN disconnected BOOLEAN NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

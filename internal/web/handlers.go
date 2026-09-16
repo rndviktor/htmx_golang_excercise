@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -34,12 +35,14 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{
+	s := &Server{
 		DB:             queries,
 		sqliteDB:       database,
 		historyHub:     newHistoryHub(),
 		runningQueries: make(map[string]*runningQuery),
-	}, nil
+	}
+	s.loadDisconnectedServers()
+	return s, nil
 }
 
 func (s *Server) Routes() http.Handler {
@@ -78,6 +81,8 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/", s.handleAddServer)
 
 			r.Route("/{serverID}", func(r chi.Router) {
+				r.Post("/disconnect", s.handleServerDisconnect)
+				r.Get("/reconnect", s.handleServerReconnect)
 				r.Get("/children", s.handleServerChildren)
 				r.Get("/databases", s.handleServerDatabases)
 				r.Get("/roles", s.handleServerRoles)
@@ -163,8 +168,14 @@ func (s *Server) handleServerList(w http.ResponseWriter, r *http.Request) {
 
 	nodes := make([]treeNode, 0, len(servers))
 	for _, srv := range servers {
+		// Gray = deliberately disconnected by the user. Red = not available
+		// (probe failed), whether it was connected earlier or never reached;
+		// green = connected and pinging.
 		state := "off"
-		if s.probeServer(r.Context(), srv.ID) {
+		switch {
+		case s.isDisconnected(srv.ID):
+			state = "gray"
+		case s.probeServer(r.Context(), srv.ID):
 			state = "on"
 		}
 		nodes = append(nodes, treeNode{
@@ -174,6 +185,7 @@ func (s *Server) handleServerList(w http.ResponseWriter, r *http.Request) {
 			Sub:   fmt.Sprintf("%s:%d / %s", srv.Host, srv.Port, srv.MaintenanceDb),
 			URL:   fmt.Sprintf("/api/servers/%d/children", srv.ID),
 			State: state,
+			Menu:  "server",
 		})
 	}
 
@@ -181,7 +193,9 @@ func (s *Server) handleServerList(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleServerChildren renders the category folders shown when a server node
-// is expanded in the tree.
+// is expanded in the tree. A deliberately disconnected server cannot be
+// expanded and renders nothing. A server that is not available (whether it was
+// connected earlier or never reached) renders the reconnect hint instead.
 func (s *Server) handleServerChildren(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
 	if err != nil || id < 1 {
@@ -189,6 +203,34 @@ func (s *Server) handleServerChildren(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.isDisconnected(id) {
+		renderTree(w, nil, "")
+		return
+	}
+
+	// No cached pool means the server is unreachable; a cached pool that no
+	// longer answers means it was connected earlier but is down now. Both are
+	// "not available" and show the reconnect hint instead of stale folders.
+	pool := s.peekCachedPool(id)
+	if pool == nil {
+		s.renderServerUnavailable(w)
+		return
+	}
+	pingCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	reachable := pool.Ping(pingCtx) == nil
+	cancel()
+	if !reachable {
+		s.renderServerUnavailable(w)
+		return
+	}
+
+	s.renderServerFolders(w, r, id)
+}
+
+// renderServerFolders renders the category folders shown when a server node is
+// expanded. pool-less servers render without live counts (never dialing, so
+// unreachable servers stay fast); any cached pool is only peeked at.
+func (s *Server) renderServerFolders(w http.ResponseWriter, r *http.Request, id int64) {
 	if _, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
 		ID:     id,
 		UserID: db.DefaultUserID,
@@ -231,6 +273,63 @@ func (s *Server) handleServerChildren(w http.ResponseWriter, r *http.Request) {
 		folder(fmt.Sprintf("server-%d-roles", id), "roles", "👥", "Login/Group Roles", base+"/roles"),
 		folder(fmt.Sprintf("server-%d-tablespaces", id), "tablespaces", "💽", "Tablespaces", base+"/tablespaces"),
 	}, "")
+}
+
+// handleServerDisconnect marks the server as intentionally disconnected: it
+// shows a gray dot, cannot be expanded, and is not re-connected on page
+// refresh. The user reconnects via the node's Refresh action.
+func (s *Server) handleServerDisconnect(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
+	if err != nil || id < 1 {
+		http.Error(w, "Invalid server id", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
+		ID:     id,
+		UserID: db.DefaultUserID,
+	}); err != nil {
+		http.Error(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	s.setDisconnected(id, true)
+	s.dropServerPools(id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleServerReconnect restores the connection of a (possibly disconnected)
+// server. On success it un-marks the server and renders its children; on
+// failure it renders the "not available" hint so the user can retry.
+func (s *Server) handleServerReconnect(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
+	if err != nil || id < 1 {
+		http.Error(w, "Invalid server id", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
+		ID:     id,
+		UserID: db.DefaultUserID,
+	}); err != nil {
+		http.Error(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	connectCtx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	if s.ensureServerConnection(connectCtx, id) == nil {
+		s.renderServerUnavailable(w)
+		return
+	}
+
+	s.setDisconnected(id, false)
+	s.renderServerFolders(w, r, id)
+}
+
+// renderServerUnavailable renders the hint shown inside a server node when it
+// is disconnected or its connection is unavailable: the server cannot be
+// expanded and must be reconnected via the node's Refresh action.
+func (s *Server) renderServerUnavailable(w http.ResponseWriter) {
+	renderTree(w, nil, "Server is not available. Right-click the server and choose \"Try to reconnect\".")
 }
 
 // loadServerPool validates the {serverID} route param and returns a live

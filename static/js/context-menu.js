@@ -56,6 +56,44 @@ function initContextMenu() {
         });
         menu.appendChild(qtItem);
 
+        // Server nodes react to their state: connected (green) offers
+        // "Disconnect from server", disconnected-by-user (gray) offers
+        // "Connect", and unavailable (red) offers "Try to reconnect".
+        // The two reconnecting actions go through /reconnect and turn the
+        // dot green on success.
+        if (currentMenuKind === "server") {
+            const divider = document.createElement("div");
+            divider.className = "my-1 border-t border-gray-700";
+            menu.appendChild(divider);
+
+            const state = el.getAttribute("data-tree-state");
+
+            if (state === "on") {
+                const discItem = menuItem("Disconnect from server", true);
+                discItem.addEventListener("click", () => {
+                    const serverID = parseServerDBURL(currentTableURL).serverID;
+                    const btn = el.querySelector("button[hx-get]");
+                    const target = btn && btn.getAttribute("hx-target");
+                    if (target) {
+                        const container = document.querySelector(target);
+                        if (container) container.innerHTML = "";
+                    }
+                    // Gray immediately; the backend keeps it disconnected so a page
+                    // refresh does not re-connect the server.
+                    setServerDot(el, "gray");
+                    if (serverID) {
+                        fetch("/api/servers/" + serverID + "/disconnect", { method: "POST" });
+                    }
+                });
+                menu.appendChild(discItem);
+            } else {
+                const label = state === "off" ? "Try to reconnect" : "Connect";
+                const item = menuItem(label, false);
+                item.addEventListener("click", () => refreshTreeNode(el));
+                menu.appendChild(item);
+            }
+        }
+
         // The "Scripts" submenu generates DDL/DML scripts. Tables get
         // the full set, views get CREATE, INSERT and SELECT.
         if (currentMenuKind === "table" || currentMenuKind === "view") {

@@ -51,7 +51,12 @@ var (
 	// server (database-level tree nodes must query that database's catalogs,
 	// not the server's maintenance DB).
 	dbSpecificPools = make(map[dbPoolKey]*pgxpool.Pool)
-	mu              sync.RWMutex
+// disconnectedServers tracks servers the user explicitly disconnected
+// from. They show a gray dot, cannot be expanded, and are not re-connected
+// automatically on page refresh until the user reconnects them. The flag is
+// also persisted in the server table so it survives across restarts.
+	disconnectedServers = make(map[int64]bool)
+	mu                  sync.RWMutex
 )
 
 type dbPoolKey struct {
@@ -150,6 +155,93 @@ func (s *Server) getOrCreateDbPool(ctx context.Context, id int64, database strin
 	log.Printf("Connected to server %d database %q", id, database)
 
 	return pool, nil
+}
+
+// isDisconnected reports whether the user explicitly disconnected the server.
+func (s *Server) isDisconnected(id int64) bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return disconnectedServers[id]
+}
+
+// setDisconnected marks a server as explicitly disconnected (true) or
+// reconnected (false). The flag is persisted in the server table so it
+// survives across application restarts.
+func (s *Server) setDisconnected(id int64, disconnected bool) {
+	v := 0
+	if disconnected {
+		v = 1
+	}
+	if _, err := s.sqliteDB.ExecContext(context.Background(),
+		`UPDATE server SET disconnected = ? WHERE id = ? AND user_id = ?`,
+		v, id, db.DefaultUserID); err != nil {
+		log.Printf("Failed to persist disconnected state for server %d: %v", id, err)
+	}
+	mu.Lock()
+	if disconnected {
+		disconnectedServers[id] = true
+	} else {
+		delete(disconnectedServers, id)
+	}
+	mu.Unlock()
+}
+
+// loadDisconnectedServers reads the persistently stored disconnected flags
+// into the in-memory map so a server stays gray across restarts.
+func (s *Server) loadDisconnectedServers() {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rows, err := s.sqliteDB.QueryContext(ctx,
+		`SELECT id FROM server WHERE user_id = ? AND disconnected = 1`, db.DefaultUserID)
+	if err != nil {
+		log.Printf("Failed to load disconnected servers: %v", err)
+		return
+	}
+	defer rows.Close()
+	mu.Lock()
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err == nil {
+			disconnectedServers[id] = true
+		}
+	}
+	mu.Unlock()
+	if err := rows.Err(); err != nil {
+		log.Printf("Failed to load disconnected servers: %v", err)
+	}
+}
+
+// dropServerPools closes and removes the cached pools of a server.
+func (s *Server) dropServerPools(id int64) {
+	mu.Lock()
+	if p := dbPools[id]; p != nil {
+		delete(dbPools, id)
+		p.Close()
+	}
+	for key := range dbSpecificPools {
+		if key.ServerID == id {
+			p := dbSpecificPools[key]
+			delete(dbSpecificPools, key)
+			p.Close()
+		}
+	}
+	mu.Unlock()
+}
+
+// ensureServerConnection returns a healthy pool for the server, dropping and
+// re-dialing a stale cached pool if needed. Returns nil on failure.
+func (s *Server) ensureServerConnection(ctx context.Context, id int64) *pgxpool.Pool {
+	if pool := s.peekCachedPool(id); pool != nil {
+		if pool.Ping(ctx) == nil {
+			return pool
+		}
+		s.dropServerPools(id)
+	}
+	pool, err := s.getOrCreatePool(ctx, id)
+	if err != nil {
+		return nil
+	}
+	return pool
 }
 
 // dialServer opens and pings a new pgx pool to dbname on the given registered

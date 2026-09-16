@@ -46,11 +46,32 @@ function expandTreeContainer(id) {
         .catch(() => false);
 }
 
+// Switches the status dot of a server tree node (el is the server's <li>).
+// state is "on" (green) or "gray" (deliberately disconnected). The gray dot
+// uses an inline background color because the precompiled tailwind.css does
+// not carry a gray filler class for this dot. The state is also mirrored on
+// the <li> via data-tree-state so the context menu does not depend on the
+// dot's visual color.
+function setServerDot(el, state) {
+    el.setAttribute("data-tree-state", state);
+    const dot = el.querySelector("button span.rounded-full");
+    if (!dot) return;
+    dot.classList.remove("bg-green-500", "bg-red-500");
+    if (state === "on") {
+        dot.style.backgroundColor = "";
+        dot.classList.add("bg-green-500");
+    } else {
+        dot.style.backgroundColor = "#94a3b8";
+    }
+}
+
 // Refreshes one lazily-loaded tree node in place: re-fetches its children and
 // then re-expands every descendant that was expanded before the refresh, so
 // the previously visible subtree stays open and is re-populated. el is the
-// node's <li> element carrying the expand button. Resolves with true when the
-// node was refreshed, false otherwise.
+// node's <li> element carrying the expand button. For a server node the
+// refresh goes through /reconnect, rendering the children on success and the
+// "not available" hint otherwise. Resolves with true when the node was
+// refreshed, false otherwise.
 function refreshTreeNode(el) {
     const btn = el.querySelector("button[hx-get]");
     if (!btn) return Promise.resolve(false);
@@ -65,12 +86,24 @@ function refreshTreeNode(el) {
         if (c.childElementCount > 0) expanded.push(c.id);
     });
 
-    const url = btn.getAttribute("hx-get");
+    // Server nodes refresh by reconnecting: /reconnect returns the folders on
+    // success and the "not available" hint when the connection cannot be made.
+    const kind = el.getAttribute("data-tree-menu") || "";
+    let url = btn.getAttribute("hx-get");
+    if (kind === "server") url = url.replace(/\/children$/, "/reconnect");
+
     return fetch(url)
         .then((r) => { if (!r.ok) throw r; return r.text(); })
         .then((html) => {
             container.innerHTML = html;
             if (window.htmx && htmx.process) htmx.process(container);
+
+            // A reconnected server turns its dot green again; a failed
+            // reconnect leaves the dot as it was (gray when deliberately
+            // disconnected, red when unavailable).
+            if (kind === "server" && container.querySelector("ul button[hx-get]")) {
+                setServerDot(el, "on");
+            }
 
             // Re-expand previously expanded descendants one range at a time,
             // waiting for a parent before its expanded children can load.
