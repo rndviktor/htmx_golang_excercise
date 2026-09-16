@@ -1,0 +1,24 @@
+<div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm"
+     onclick="if (event.target === this) closeSaveDialog()">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-md p-6">
+        <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
+            <h3 class="text-lg font-bold text-white">Save Script</h3>
+            <button onclick="closeSaveDialog()" class="text-gray-400 hover:text-white">&#10005;</button>
+        </div>
+
+        <label class="block text-xs font-semibold text-gray-400 uppercase mb-1">Save To</label>
+        <input type="text" name="save-path"
+               placeholder="Absolute path, defaults to the server working folder"
+               class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm"
+               autocomplete="off" spellcheck="false"
+               onkeydown="if (event.key === 'Enter') confirmSaveDialog()">
+        <div class="save-dialog-error hidden text-xs text-red-400 mt-2 mb-2 min-h-4"></div>
+
+        <div class="flex justify-end space-x-2 pt-4 border-t border-gray-700">
+            <button type="button" onclick="closeSaveDialog()"
+                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm">Cancel</button>
+            <button type="button" onclick="confirmSaveDialog()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-medium">Save</button>
+        </div>
+    </div>
+</div>

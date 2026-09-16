@@ -6,6 +6,10 @@
 
 let tabCounter = 0;
 let activeTabId = TAB_DASHBOARD;
+// Per-tab save state: {name, path, dirty}. `name` is the tab label without
+// the unsaved marker; `path` stays empty until the script has been saved.
+const tabMeta = {};
+let scriptCounter = 0;
 
 // -----------------------------------------------------------------------------
 // Output panel helpers
@@ -88,6 +92,97 @@ function logMessage(panel, type, text) {
 
 function panelTabId(panel) {
     return (panel.id || "").replace(TAB_CONTENT_PREFIX, "");
+}
+
+// -----------------------------------------------------------------------------
+// Script tab save state (labels + dirty markers)
+// -----------------------------------------------------------------------------
+
+function basename(path) {
+    const parts = String(path).split(/[\\/]/);
+    return parts[parts.length - 1] || path;
+}
+
+function displayTabName(id) {
+    const m = tabMeta[id];
+    if (!m) return "Query";
+    return m.name + (m.dirty ? "*" : "");
+}
+
+function updateTabLabel(id) {
+    const btn = document.querySelector('.tab-btn[data-tab-id="' + id + '"]');
+    const span = btn ? btn.querySelector("span") : null;
+    const m = tabMeta[id];
+    if (span) span.textContent = displayTabName(id);
+    if (btn) btn.title = (m && m.path) ? m.path : "";
+}
+
+// Marks the tab dirty after the user edits the editor (wired from the
+// CodeMirror updateListener; programmatic set()/restore calls are excluded).
+function markTabDirty(panel) {
+    const id = panelTabId(panel);
+    const m = tabMeta[id];
+    if (m && !m.dirty) {
+        m.dirty = true;
+        updateTabLabel(id);
+    }
+}
+
+function saveScript(btn) {
+    const panel = btn.closest("[id^='tab-content']");
+    if (!panel) return;
+    const id = panelTabId(panel);
+    const m = tabMeta[id];
+    if (m && m.path) {
+        doSaveScript(id, m.path);
+    } else {
+        showSaveDialog(id);
+    }
+}
+
+function saveScriptAs(btn) {
+    const panel = btn.closest("[id^='tab-content']");
+    if (!panel) return;
+    showSaveDialog(panelTabId(panel));
+}
+
+// Opens the Save As dialog component (static/js/save-dialog.js). The dialog
+// loads its markup from the server partial and prefills the path with the
+// server process folder; the chosen path is persisted by doSaveScript.
+function showSaveDialog(id) {
+    const m = tabMeta[id];
+    if (!window.SaveDialog) return;
+    window.SaveDialog.open({
+        id: id,
+        name: (m && m.name) ? m.name.replace(/\*$/, "") : "script.sql",
+        onSave: (path) => doSaveScript(id, path),
+    });
+}
+
+function doSaveScript(id, path) {
+    const panel = document.getElementById(TAB_CONTENT_PREFIX + id);
+    if (!panel) return;
+    const content = window.SqlEditor ? window.SqlEditor.value(panel) : "";
+    fetch("/api/save-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: path, content: content }),
+    })
+        .then((r) => { if (!r.ok) throw r; return r.json(); })
+        .then(() => {
+            const m = tabMeta[id];
+            if (m) {
+                m.path = path;
+                m.name = basename(path);
+                m.dirty = false;
+                updateTabLabel(id);
+            }
+            logMessage(panel, "info", "Saved to " + path);
+        })
+        .catch(async (err) => {
+            const msg = (err && err.text) ? await err.text() : String(err);
+            logMessage(panel, "error", "Save failed: " + msg);
+        });
 }
 
 // Returns the #query-editor form of a script tab panel, if present.
@@ -458,6 +553,7 @@ function newTabId() {
 }
 
 function openTab(label, query, serverID, serverName, dbName, id) {
+    const restored = !!id;
     if (!id) {
         id = newTabId();
     } else {
@@ -465,12 +561,21 @@ function openTab(label, query, serverID, serverName, dbName, id) {
         if (!isNaN(n) && n > tabCounter) tabCounter = n;
     }
 
+    // Every new tab is an unsaved script[N].sql*; restored workspace tabs
+    // keep their stored label (minus the unsaved marker) and stay clean.
+    const metaName = restored
+        ? (label || "script.sql").replace(/\*$/, "")
+        : "script" + (++scriptCounter) + ".sql";
+    const m = /^script(\d+)\.sql$/i.exec(metaName);
+    if (m) scriptCounter = Math.max(scriptCounter, parseInt(m[1], 10));
+    tabMeta[id] = { name: metaName, path: "", dirty: !restored };
+
     // Create tab button
     const btn = document.createElement("button");
     btn.className = "tab-btn flex items-center space-x-2 px-4 py-2 font-medium rounded-t text-gray-400 hover:text-gray-200";
     btn.draggable = true;
     btn.dataset.tabId = id;
-    btn.innerHTML = '<span>' + label + '</span>' +
+    btn.innerHTML = '<span>' + displayTabName(id) + '</span>' +
         '<span class="text-xs text-gray-500 hover:text-gray-300" onclick="closeTab(\'' + id + '\', event)">✕</span>';
     btn.addEventListener("click", (e) => {
         if (e.target.textContent === "✕") return;
@@ -482,6 +587,7 @@ function openTab(label, query, serverID, serverName, dbName, id) {
     // and the history button always remains right-aligned.
     if (historyToggle) tabBar.insertBefore(btn, historyToggle);
     else tabBar.appendChild(btn);
+    updateTabLabel(id);
 
     // Create content panel and fetch its content from the server
     const panel = document.createElement("div");
@@ -574,6 +680,7 @@ function closeTab(id, e) {
     const panel = document.getElementById(TAB_CONTENT_PREFIX + id);
     if (btn) btn.remove();
     if (panel) panel.remove();
+    delete tabMeta[id];
 
     // Switch to the last remaining tab (Dashboard is always first)
     const remaining = document.querySelectorAll(".tab-btn");

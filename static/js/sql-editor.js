@@ -4,7 +4,7 @@
 // EditorState instances). Exposes window.SqlEditor (init/value/set/
 // selection/focus/search) used by the classic-script tab logic above.
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, placeholder, Decoration } from "@codemirror/view";
-import { EditorState, StateEffect, StateField } from "@codemirror/state";
+import { EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, indentOnInput, syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, ifNotIn } from "@codemirror/autocomplete";
@@ -220,7 +220,10 @@ function editorExtensions(panel) {
         searchMatchesField,
         EditorState.allowMultipleSelections.of(true),
         EditorView.updateListener.of((update) => {
-            if (update.docChanged && typeof window.scheduleSave === "function") window.scheduleSave();
+            if (!update.docChanged) return;
+            if (typeof window.scheduleSave === "function") window.scheduleSave();
+            const userEdit = update.transactions.some((t) => t.annotation(Transaction.userEvent));
+            if (userEdit && typeof window.markTabDirty === "function") window.markTabDirty(panel);
         }),
         keymap.of([
             ...closeBracketsKeymap,
@@ -321,9 +324,13 @@ window.SqlEditor = {
             view.dispatch({
                 changes: { from: sel.from, to: sel.to, insert: formatted },
                 selection: { anchor: sel.from, head: sel.from + formatted.length },
+                annotations: Transaction.userEvent.of("format"),
             });
         } else {
-            view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: formatted } });
+            view.dispatch({
+                changes: { from: 0, to: view.state.doc.length, insert: formatted },
+                annotations: Transaction.userEvent.of("format"),
+            });
         }
         view.focus();
     },
