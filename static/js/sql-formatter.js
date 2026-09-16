@@ -19,9 +19,10 @@ const BREAK_BEFORE = new Set([
   "SELECT","FROM","WHERE","GROUP","ORDER","HAVING","LIMIT","OFFSET",
   "FETCH","INSERT","VALUES","UPDATE","SET","DELETE","CREATE","ALTER",
   "DROP","WITH","RETURNING","UNION","INTERSECT","EXCEPT",
+  "TABLESPACE","OWNER",
 ]);
 const SELECT_LIST_END = new Set(["FROM","INTO","JOIN","LEFT","RIGHT","INNER","OUTER","CROSS","FULL","NATURAL"]);
-const INLINE_PAREN_AFTER = new Set(["IN","ANY","SOME","ALL","ARRAY","EXCEPT","INTERSECT","LIKE","ILIKE","BETWEEN","OVER","PARTITION","ROW","ROWS"]);
+const INLINE_PAREN_AFTER = new Set(["IN","ANY","SOME","ALL","ARRAY","EXCEPT","INTERSECT","LIKE","ILIKE","BETWEEN","OVER","PARTITION","ROW","ROWS","KEY"]);
 
 // ── Tokeniser ────────────────────────────────────────────────────────
 
@@ -166,6 +167,7 @@ export function tokenize(sql) {
             "FORCE","PARALLEL","ENABLE","DISABLE","TRIGGER","FUNCTION",
             "PROCEDURE","EXTENSION","SCHEMA","DATABASE","TABLE","INDEX",
             "VIEW","SEQUENCE","TYPE","RULE","OWNER","ROLE","TEMPORARY",
+            "TABLESPACE",
             "TEMP","UNLOGGED","IF","THEN","ELSE","ELSIF","LOOP","WHILE",
             "FOR","FOREACH","REVERSE","EXIT","CONTINUE","RETURN","RAISE",
             "NOTICE","EXCEPTION","BEGIN","DECLARE","EXCEPTION","END",
@@ -203,7 +205,9 @@ export function format(sql, opts = {}) {
   let inSelect = false;        // currently inside a SELECT field list
   let inCase = 0;              // CASE depth
   let pendingBY = false;       // last keyword was GROUP/ORDER/PARTITION
-  const parenNest = [];        // { inline: bool, inSelect: bool }
+  let seenCreate = false;      // saw CREATE in the current statement
+  let pendingBlockParen = false; // next ( is a CREATE TABLE column list
+  const parenNest = [];        // { inline: bool, blockList: bool, inSelect: bool }
 
   const indentStr = () => tab.repeat(Math.max(indent, 0));
 
@@ -259,6 +263,8 @@ export function format(sql, opts = {}) {
     if (tok.type === "semi") {
       out.push(";");
       indent = 0;
+      seenCreate = false;
+      pendingBlockParen = false;
       const gap = Math.max((opts.linesBetweenQueries ?? 2) - 1, 0);
       for (let b = 0; b < gap; b++) out.push("\n");
       out.push("\n");
@@ -293,6 +299,8 @@ export function format(sql, opts = {}) {
     // ── Keywords that trigger a newline before ───────────────────
     if (up && BREAK_BEFORE.has(up)) {
       if (!lineStart) pushNL();
+
+      if (up === "CREATE") seenCreate = true;
 
       if (up === "GROUP" || up === "ORDER" || up === "PARTITION") {
         out.push(tok.value);
@@ -367,10 +375,25 @@ export function format(sql, opts = {}) {
     if (tok.type === "lparen") {
       const prevType = prevNonWsType(idx);
       const prevUp = prevNonWsUp(idx);
-      const inline = prevType === "ident" || (prevUp !== null && INLINE_PAREN_AFTER.has(prevUp)) || prevType === "string" || prevType === "number" || prevType === "rparen" || prevType === "other";
+      const isCreateList = pendingBlockParen;
+      pendingBlockParen = false;
+      const inline = !isCreateList && (prevType === "ident" || (prevUp !== null && INLINE_PAREN_AFTER.has(prevUp)) || prevType === "string" || prevType === "number" || prevType === "rparen" || prevType === "other");
+
+      if (isCreateList) {
+        // CREATE TABLE column list: opening ( on its own line, one column per
+        // line beneath it, closing ) back at column 0.
+        if (!lineStart) out.push("\n" + indentStr());
+        out.push("(");
+        parenNest.push({ inline: false, blockList: true, inSelect });
+        indent++;
+        pushNL();
+        continue;
+      }
+
       indent++;
-      parenNest.push({ inline, inSelect });
+      parenNest.push({ inline, blockList: false, inSelect });
       if (inline) {
+        if (prevUp === "KEY") out.push(" ");
         out.push("(");
         lineStart = false;
         forbidSpace = true;
@@ -397,18 +420,21 @@ export function format(sql, opts = {}) {
     // ── Comma ────────────────────────────────────────────────────
     if (tok.type === "comma") {
       out.push(",");
-      if (inSelect && parenNest.length === 0) {
+      const top = parenNest[parenNest.length - 1];
+      if ((inSelect && parenNest.length === 0) || (top && top.blockList)) {
         pushNL();
         continue;
-      } else {
-        out.push(" ");
-        forbidSpace = true;
       }
+      out.push(" ");
+      forbidSpace = true;
       lineStart = false;
       continue;
     }
 
     // ── Everything else (ident, number, string, op) ──────────────
+    if (up === "TABLE" && seenCreate) pendingBlockParen = true;
+    if (up === "AS") pendingBlockParen = false;
+
     if (tok.type === "op") {
       // Casts and json arrows hug their operand; other operators get spaces
       const tight = /^[:]|^->/.test(tok.value);

@@ -220,6 +220,14 @@ func (s *Server) handleInsertViewScript(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(map[string]string{"query": query})
 }
 
+// selectColumns renders a SELECT column list with one column per line.
+func selectColumns(cols []string) string {
+	if len(cols) == 0 {
+		return "SELECT *"
+	}
+	return "SELECT\n    " + strings.Join(cols, ",\n    ")
+}
+
 // handleSelectViewScript returns a SELECT script for a view as JSON
 // {query: "..."}, listing its columns exactly like the table SELECT script.
 func (s *Server) handleSelectViewScript(w http.ResponseWriter, r *http.Request) {
@@ -242,7 +250,7 @@ func (s *Server) handleSelectViewScript(w http.ResponseWriter, r *http.Request) 
 		cols = append(cols, getString(it))
 	}
 
-	query := "SELECT " + strings.Join(cols, ", ") + "\nFROM " + viewName + ";"
+	query := selectColumns(cols) + "\nFROM " + viewName + ";"
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"query": query})

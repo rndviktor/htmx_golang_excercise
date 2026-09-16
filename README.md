@@ -93,12 +93,14 @@ Then register `localhost:5432` with those credentials and browse the tree.
 
 ### 5. Rebuilding static assets (optional)
 
-The CodeMirror editor and Chart.js are vendorized into `static/`. To rebuild after editing `static/js/sql-editor.js` or the CodeMirror/Chart.js dependencies:
+The CodeMirror editor and Chart.js are vendorized into `static/`. The editor bundle (`static/codemirror.bundle.js`) is built with esbuild **from `static/js/sql-editor.js`, inlining `static/js/sql-formatter.js`** (the SQL formatter behind the Format button) and the CodeMirror packages. To rebuild after editing any of those files:
 
 ```sh
-npm install
-npm run build:editor   # esbuild JS bundle + copy chart.js
+npm install              # first run only (installs esbuild + CodeMirror deps)
+npm run build:editor     # esbuild JS bundle + copy chart.js
 ```
+
+Important: the built assets are embedded into the Go binary via `//go:embed`, so after rebuilding the bundle you must also rebuild/restart the server (`go run ./cmd/server`) and hard-refresh the browser (Ctrl+F5) — otherwise the old cached JS keeps running.
 
 Tailwind is compiled separately (see `tailwind.config.js` / `tailwind.input.css`); the compiled `static/tailwind.css` is embedded with the rest of the assets via `//go:embed`.
 

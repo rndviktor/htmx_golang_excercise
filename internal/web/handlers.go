@@ -972,7 +972,7 @@ func (s *Server) handleTableColumns(w http.ResponseWriter, r *http.Request) {
 		cols = append(cols, getString(it))
 	}
 
-	query := "SELECT " + strings.Join(cols, ", ") + "\nFROM " + tableName + ";"
+	query := selectColumns(cols) + "\nFROM " + tableName + ";"
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"query": query})
