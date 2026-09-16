@@ -291,6 +291,9 @@ function executeQuery(btn, page) {
                 pag.classList.add("hidden");
             }
 
+            const dataTab = panel.querySelector('[data-output-tab="data"]');
+            if (dataTab) switchOutputTab(dataTab);
+
             if (hasSelection && ed) {
                 ed.focus(panel, { from: selStart, to: selEnd });
             }
