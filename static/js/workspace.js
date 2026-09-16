@@ -26,6 +26,7 @@ function collectWorkspaceState() {
             server_id: params ? parseInt(params.sid.value, 10) || 0 : 0,
             db_name: params ? params.db.value : "",
             query: editorValue,
+            path: (tabMeta[btn.dataset.tabId] && tabMeta[btn.dataset.tabId].path) || "",
             tab_order: tabs.length,
         });
     });
@@ -94,7 +95,8 @@ function restoreWorkspace() {
             waitForTreeRoot(() => applyTreeRestore(), 50);
 
             const openings = (state.tabs || []).map((tab) =>
-                openTab(tab.title, tab.query, tab.server_id, tab.server_name, tab.db_name, tab.id));
+                openTab(tab.title, tab.query, tab.server_id, tab.server_name, tab.db_name, tab.id,
+                    { path: tab.path || "", pathExists: !!tab.path_exists }));
 
             await Promise.all(openings);
 

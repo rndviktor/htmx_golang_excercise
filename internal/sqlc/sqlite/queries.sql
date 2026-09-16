@@ -65,8 +65,8 @@ DELETE FROM workspace_tabs
 WHERE user_id = ?;
 
 -- name: InsertWorkspaceTab :exec
-INSERT INTO workspace_tabs (id, user_id, title, connection_id, query_text, tab_order, created_at)
-VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
+INSERT INTO workspace_tabs (id, user_id, title, connection_id, query_text, file_path, tab_order, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
 
 -- name: ListQueryHistory :many
 SELECT id, user_id, tab_id, connection_id, query_text, executed_at, duration_ms, status, rows_affected

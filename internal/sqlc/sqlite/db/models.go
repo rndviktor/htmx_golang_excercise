@@ -109,6 +109,7 @@ type WorkspaceTab struct {
 	Title        string         `json:"title"`
 	ConnectionID sql.NullString `json:"connection_id"`
 	QueryText    sql.NullString `json:"query_text"`
+	FilePath     sql.NullString `json:"file_path"`
 	TabOrder     int64          `json:"tab_order"`
 	CreatedAt    sql.NullTime   `json:"created_at"`
 }

@@ -233,8 +233,8 @@ func (q *Queries) GetUserWorkspace(ctx context.Context, userID int64) (UserWorks
 }
 
 const insertWorkspaceTab = `-- name: InsertWorkspaceTab :exec
-INSERT INTO workspace_tabs (id, user_id, title, connection_id, query_text, tab_order, created_at)
-VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO workspace_tabs (id, user_id, title, connection_id, query_text, file_path, tab_order, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 `
 
 type InsertWorkspaceTabParams struct {
@@ -243,6 +243,7 @@ type InsertWorkspaceTabParams struct {
 	Title        string         `json:"title"`
 	ConnectionID sql.NullString `json:"connection_id"`
 	QueryText    sql.NullString `json:"query_text"`
+	FilePath     sql.NullString `json:"file_path"`
 	TabOrder     int64          `json:"tab_order"`
 }
 
@@ -253,6 +254,7 @@ func (q *Queries) InsertWorkspaceTab(ctx context.Context, arg InsertWorkspaceTab
 		arg.Title,
 		arg.ConnectionID,
 		arg.QueryText,
+		arg.FilePath,
 		arg.TabOrder,
 	)
 	return err
@@ -363,7 +365,7 @@ func (q *Queries) ListServersByGroup(ctx context.Context, userID int64) ([]ListS
 }
 
 const listWorkspaceTabs = `-- name: ListWorkspaceTabs :many
-SELECT id, user_id, title, connection_id, query_text, tab_order, created_at FROM workspace_tabs
+SELECT id, user_id, title, connection_id, query_text, file_path, tab_order, created_at FROM workspace_tabs
 WHERE user_id = ?
 ORDER BY tab_order, created_at
 `
@@ -383,6 +385,7 @@ func (q *Queries) ListWorkspaceTabs(ctx context.Context, userID sql.NullInt64) (
 			&i.Title,
 			&i.ConnectionID,
 			&i.QueryText,
+			&i.FilePath,
 			&i.TabOrder,
 			&i.CreatedAt,
 		); err != nil {

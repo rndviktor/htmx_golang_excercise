@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -12,7 +13,10 @@ import (
 	sqlite "htmx-golang-excercise/internal/sqlc/sqlite/db"
 )
 
-// workspaceTabJSON mirrors one open script tab of a user.
+// workspaceTabJSON mirrors one open script tab of a user. Path is where the
+// script was last saved ("" for never-saved tabs); PathExists tells the
+// frontend whether that file still exists so a deleted script can be
+// re-flagged as dirty after a refresh.
 type workspaceTabJSON struct {
 	ID         string `json:"id"`
 	Title      string `json:"title"`
@@ -20,6 +24,8 @@ type workspaceTabJSON struct {
 	ServerName string `json:"server_name"`
 	DBName     string `json:"db_name"`
 	Query      string `json:"query"`
+	Path       string `json:"path"`
+	PathExists bool   `json:"path_exists"`
 	TabOrder   int    `json:"tab_order"`
 }
 
@@ -96,6 +102,14 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request) {
 	for _, t := range tabs {
 		serverID, dbName := decodeConnection(t.ConnectionID)
 
+		path := t.FilePath.String
+		pathExists := false
+		if path != "" {
+			if _, err := os.Stat(path); err == nil {
+				pathExists = true
+			}
+		}
+
 		// The name travels together with the id so the frontend can label
 		// the tab's connection without a follow-up lookup.
 		serverName := ""
@@ -116,6 +130,8 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request) {
 			ServerName: serverName,
 			DBName:     dbName,
 			Query:      t.QueryText.String,
+			Path:       path,
+			PathExists: pathExists,
 			TabOrder:   int(t.TabOrder),
 		})
 	}
@@ -166,6 +182,7 @@ func (s *Server) handleWorkspaceSave(w http.ResponseWriter, r *http.Request) {
 			Title:        t.Title,
 			ConnectionID: encodeConnection(t.ServerID, t.DBName),
 			QueryText:    sql.NullString{String: t.Query, Valid: t.Query != ""},
+			FilePath:     sql.NullString{String: t.Path, Valid: t.Path != ""},
 			TabOrder:     int64(t.TabOrder),
 		}); err != nil {
 			log.Printf("Failed to save workspace tab %s: %v", t.ID, err)

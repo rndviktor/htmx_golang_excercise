@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS workspace_tabs (
     title VARCHAR(255) NOT NULL,
     connection_id TEXT, -- target DB connection
     query_text TEXT DEFAULT '',
+    file_path TEXT DEFAULT '',
     tab_order INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

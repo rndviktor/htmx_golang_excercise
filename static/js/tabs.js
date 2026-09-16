@@ -178,6 +178,7 @@ function doSaveScript(id, path) {
                 updateTabLabel(id);
             }
             logMessage(panel, "info", "Saved to " + path);
+            if (typeof window.scheduleSave === "function") window.scheduleSave();
         })
         .catch(async (err) => {
             const msg = (err && err.text) ? await err.text() : String(err);
@@ -552,7 +553,7 @@ function newTabId() {
     return "tab-" + (++tabCounter);
 }
 
-function openTab(label, query, serverID, serverName, dbName, id) {
+function openTab(label, query, serverID, serverName, dbName, id, saved) {
     const restored = !!id;
     if (!id) {
         id = newTabId();
@@ -562,13 +563,18 @@ function openTab(label, query, serverID, serverName, dbName, id) {
     }
 
     // Every new tab is an unsaved script[N].sql*; restored workspace tabs
-    // keep their stored label (minus the unsaved marker) and stay clean.
+    // keep their stored label (minus the unsaved marker). A restored tab
+    // whose saved file no longer exists is effectively unsaved again and
+    // keeps the * marker so it is not mistaken for persisted on disk.
+    const saveInfo = saved || {};
     const metaName = restored
         ? (label || "script.sql").replace(/\*$/, "")
         : "script" + (++scriptCounter) + ".sql";
     const m = /^script(\d+)\.sql$/i.exec(metaName);
     if (m) scriptCounter = Math.max(scriptCounter, parseInt(m[1], 10));
-    tabMeta[id] = { name: metaName, path: "", dirty: !restored };
+    let dirty = !restored;
+    if (restored && saveInfo.path && saveInfo.pathExists === false) dirty = true;
+    tabMeta[id] = { name: metaName, path: saveInfo.path || "", dirty: dirty };
 
     // Create tab button
     const btn = document.createElement("button");

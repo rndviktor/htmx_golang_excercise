@@ -136,6 +136,23 @@ func migrate(database *sql.DB) error {
 		}
 	}
 
+	// file_path records where a script tab was last saved so a refresh can
+	// detect the file being deleted and re-flag the tab as unsaved.
+	rows5, err := database.Query(`SELECT name FROM pragma_table_info('workspace_tabs') WHERE name = 'file_path'`)
+	if err != nil {
+		return err
+	}
+	hasFilePath := rows5.Next()
+	rows5.Close()
+	if err := rows5.Err(); err != nil {
+		return err
+	}
+	if !hasFilePath {
+		if _, err := database.Exec(`ALTER TABLE workspace_tabs ADD COLUMN file_path TEXT DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
