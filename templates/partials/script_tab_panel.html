@@ -35,7 +35,8 @@
       class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
       <span class="inline-block scale-[1.5]">&#9654;</span>
     </button>
-    <button title="Stop"
+    <button onclick="cancelRunningQuery(this)"
+      title="Stop Running Query (Alt+Shift+C)"
       class="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-700 border border-gray-600 rounded text-sm">
       <span class="inline-block scale-[1.5]">&#9724;</span>
     </button>
@@ -215,7 +216,7 @@
     <!-- Tab Navigation -->
     <div class="flex text-xs bg-gray-800 border-b border-gray-700">
       <div class="output-tab px-3 py-1.5 cursor-pointer border-r border-gray-700 text-blue-400 hover:text-gray-200 border-t-2 border-t-blue-500 font-bold" data-output-tab="data" onclick="switchOutputTab(this)">
-        Data Output
+        Data Output<span class="query-spinner hidden" aria-hidden="true"></span>
       </div>
       <div class="output-tab px-3 py-1.5 cursor-pointer border-r border-gray-700 text-gray-400 hover:text-gray-200 border-t-2 border-t-transparent font-normal" data-output-tab="messages" onclick="switchOutputTab(this)">
         Messages

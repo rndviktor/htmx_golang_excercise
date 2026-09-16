@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,9 +21,11 @@ import (
 )
 
 type Server struct {
-	DB         *sqlite.Queries
-	sqliteDB   *sql.DB
-	historyHub *historyHub
+	DB             *sqlite.Queries
+	sqliteDB       *sql.DB
+	historyHub     *historyHub
+	queryMu        sync.Mutex
+	runningQueries map[string]*runningQuery
 }
 
 func NewServer() (*Server, error) {
@@ -31,7 +34,12 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{DB: queries, sqliteDB: database, historyHub: newHistoryHub()}, nil
+	return &Server{
+		DB:             queries,
+		sqliteDB:       database,
+		historyHub:     newHistoryHub(),
+		runningQueries: make(map[string]*runningQuery),
+	}, nil
 }
 
 func (s *Server) Routes() http.Handler {
@@ -56,6 +64,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/query-history/stream", s.handleHistoryStream)
 		r.Get("/api/query-history/{id}", s.handleQueryHistoryDetail)
 		r.Post("/api/execute-query", s.handleExecuteQuery)
+		r.Post("/api/cancel-query", s.handleCancelQuery)
 
 		r.Get("/api/sessions", s.handleSessions)
 		r.Post("/api/sessions/{pid}/cancel", s.handleSessionCancel)
@@ -717,10 +726,22 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
+	// Hold a pool connection for the whole statement so the backend PID can be
+	// registered and the running query cancelled via the Stop button.
+	conn, err := pool.Acquire(r.Context())
+	if err != nil {
+		http.Error(w, "Cannot connect to database: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer conn.Release()
+
+	s.registerQuery(tabID, conn.Conn().PgConn().PID(), pool)
+	defer s.unregisterQuery(tabID)
+
 	// EXPLAIN returns rows but cannot be used as a subquery, so it must be
 	// executed directly rather than wrapped for count/pagination.
 	if isExplain(query) {
-		s.renderExplain(w, r, pool, query, serverID, dbName, tabID, start, limit)
+		s.renderExplain(w, r, conn, query, serverID, dbName, tabID, start, limit)
 		return
 	}
 
@@ -728,7 +749,7 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	// count + pagination. Everything else (CREATE/DROP/ALTER/INSERT/UPDATE/
 	// DELETE/...) is executed directly and returns a command tag instead.
 	if !isRowReturning(query) {
-		exec, err := pool.Exec(r.Context(), query)
+		exec, err := conn.Exec(r.Context(), query)
 		elapsed := time.Since(start).Seconds()
 
 		message := "OK"
@@ -761,13 +782,6 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	batch := &pgx.Batch{}
 	batch.Queue("SELECT COUNT(*) FROM ("+query+") _cnt")
 	batch.Queue("SELECT * FROM ("+query+") _q LIMIT $1 OFFSET $2", limit, offset)
-
-	conn, err := pool.Acquire(r.Context())
-	if err != nil {
-		http.Error(w, "Cannot connect to database: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer conn.Release()
 
 	br := conn.SendBatch(r.Context(), batch)
 	defer br.Close()
@@ -894,9 +908,10 @@ func isExplain(query string) bool {
 }
 
 // renderExplain executes an EXPLAIN/EXPLAIN ANALYZE statement directly and
-// renders its plan rows into the explain output panel.
-func (s *Server) renderExplain(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, query string, serverID int64, dbName, tabID string, start time.Time, limit int) {
-	rows, err := pool.Query(r.Context(), query)
+// renders its plan rows into the explain output panel. conn is the already
+// acquired (and registration-tracked) pool connection running the query.
+func (s *Server) renderExplain(w http.ResponseWriter, r *http.Request, conn *pgxpool.Conn, query string, serverID int64, dbName, tabID string, start time.Time, limit int) {
+	rows, err := conn.Query(r.Context(), query)
 	elapsed := time.Since(start).Seconds()
 
 	message := ""

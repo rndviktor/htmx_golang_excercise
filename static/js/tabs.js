@@ -10,6 +10,10 @@ let activeTabId = TAB_DASHBOARD;
 // the unsaved marker; `path` stays empty until the script has been saved.
 const tabMeta = {};
 let scriptCounter = 0;
+// AbortControllers of in-flight queries, keyed by script tab id, so the Stop
+// button can abort the browser request and ask the server to cancel the
+// backend query.
+const runningQueriesByTab = {};
 
 // -----------------------------------------------------------------------------
 // Output panel helpers
@@ -214,6 +218,13 @@ function formatSql(btn) {
     }
 }
 
+// Shows/hides the spinner that sits after the "Data Output" sub-tab label
+// while a query on this script tab panel is running.
+function setRunningSpinner(panel, running) {
+    const spin = panel ? panel.querySelector('[data-output-tab="data"] .query-spinner') : null;
+    if (spin) spin.classList.toggle("hidden", !running);
+}
+
 function executeQuery(btn, page) {
     const panel = btn.closest("[id^='tab-content']");
     if (!panel) return;
@@ -250,13 +261,31 @@ function executeQuery(btn, page) {
     });
 
     const t0 = performance.now();
-    if (status) status.textContent = "Executing...";
-    fetch("/api/execute-query", { method: "POST", body })
+    if (status) status.textContent = "Running... 0s";
+    setRunningSpinner(panel, true);
+
+    // Live elapsed counter so long-running queries show progress; the final
+    // status text (row count / error / cancelled) replaces it once done.
+    const ticker = setInterval(() => {
+        const seconds = Math.floor((performance.now() - t0) / 1000);
+        if (status) status.textContent = "Running... " + seconds + "s";
+    }, 500);
+
+    const tabId = panelTabId(panel);
+    const abortCtrl = new AbortController();
+    runningQueriesByTab[tabId] = abortCtrl;
+
+    fetch("/api/execute-query", {
+        method: "POST",
+        body,
+        signal: abortCtrl.signal,
+    })
         .then((r) => {
             if (!r.ok) throw r;
             return r.text();
         })
         .then((html) => {
+            delete runningQueriesByTab[tabId];
             const tmp = document.createElement("div");
             tmp.innerHTML = html;
             const result = tmp.querySelector(".query-result");
@@ -293,19 +322,30 @@ function executeQuery(btn, page) {
 
             const dataTab = panel.querySelector('[data-output-tab="data"]');
             if (dataTab) switchOutputTab(dataTab);
+            setRunningSpinner(panel, false);
 
             if (hasSelection && ed) {
                 ed.focus(panel, { from: selStart, to: selEnd });
             }
         })
         .catch(async (r) => {
-            const elapsed = elapsedSeconds(t0);
-            const msg = r.body ? await r.text() : "Request failed";
-            grid.innerHTML = '<div class="p-4 text-red-400 text-sm">' + msg + '</div>';
-            if (status) status.textContent = "Error — " + elapsed + "s";
-            if (pag) pag.classList.add("hidden");
+            setRunningSpinner(panel, false);
+            delete runningQueriesByTab[panelTabId(panel)];
 
-            logMessage(panel, "error", "Query failed after " + elapsed + "s: " + msg);
+            const aborted = !!(r && r.name === "AbortError");
+            const elapsed = elapsedSeconds(t0);
+            if (aborted) {
+                const msg = "Query cancelled by user";
+                grid.innerHTML = '<div class="p-4 text-yellow-400 text-sm">' + msg + '.</div>';
+                if (status) status.textContent = "Cancelled — " + elapsed + "s";
+                logMessage(panel, "warn", "Query cancelled after " + elapsed + "s");
+            } else {
+                const msg = r.body ? await r.text() : "Request failed";
+                grid.innerHTML = '<div class="p-4 text-red-400 text-sm">' + msg + '</div>';
+                if (status) status.textContent = "Error — " + elapsed + "s";
+                logMessage(panel, "error", "Query failed after " + elapsed + "s: " + msg);
+            }
+            if (pag) pag.classList.add("hidden");
 
             const msgTab = panel.querySelector('[data-output-tab="messages"]');
             if (msgTab) switchOutputTab(msgTab);
@@ -313,6 +353,43 @@ function executeQuery(btn, page) {
             if (hasSelection && ed) {
                 ed.focus(panel, { from: selStart, to: selEnd });
             }
+        })
+        .finally(() => clearInterval(ticker));
+}
+
+// Stop button / Alt+Shift+C: aborts the in-flight HTTP request for the
+// active script tab (immediate UI feedback) and asks the server to cancel
+// the PostgreSQL backend running the query via pg_cancel_backend.
+function cancelRunningQuery(btn) {
+    const panel = btn.closest("[id^='tab-content']");
+    if (!panel) return;
+    const tabId = panelTabId(panel);
+
+    const ctrl = runningQueriesByTab[tabId];
+    if (ctrl) {
+        ctrl.abort();
+        logMessage(panel, "warn", "Cancelling query...");
+    } else {
+        logMessage(panel, "info", "No query is currently running.");
+    }
+
+    fetch("/api/cancel-query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tab_id: tabId }),
+    })
+        .then((r) => {
+            if (!r.ok) throw r;
+            return r.json();
+        })
+        .then((res) => {
+            if (res.cancelled) {
+                logMessage(panel, "warn", "Cancellation sent to the database server.");
+            }
+        })
+        .catch(async (err) => {
+            const msg = (err && err.status) ? await err.text() : "Network error";
+            logMessage(panel, "error", "Cancel failed: " + msg);
         });
 }
 
@@ -691,6 +768,12 @@ function closeTab(id, e) {
     if (panel) panel.remove();
     delete tabMeta[id];
 
+    const ctrl = runningQueriesByTab[id];
+    if (ctrl) {
+        ctrl.abort();
+        delete runningQueriesByTab[id];
+    }
+
     // Switch to the last remaining tab (Dashboard is always first)
     const remaining = document.querySelectorAll(".tab-btn");
     if (remaining.length > 0) {
@@ -818,11 +901,21 @@ function initTabShortcuts() {
 // Ctrl+S saves the active script tab to its existing path (or opens the
 // Save As dialog when it has never been saved); Ctrl+Shift+S always opens
 // Save As; Ctrl+K formats the SQL. F7 runs EXPLAIN and Shift+F7 runs
-// EXPLAIN ANALYZE on the active script tab. preventDefault stops the
-// browser's default actions, but only when an actual script tab is active
-// so the dashboard is untouched.
+// EXPLAIN ANALYZE on the active script tab. Alt+Shift+C is bound to the
+// Stop button (placeholder for future query cancellation). preventDefault
+// stops the browser's default actions, but only when an actual script tab
+// is active so the dashboard is untouched.
 function initEditorShortcuts() {
     document.addEventListener("keydown", (e) => {
+        if (e.altKey && e.shiftKey && (e.key.toLowerCase() === "c")) {
+            const panel = document.getElementById(TAB_CONTENT_PREFIX + activeTabId);
+            const btn = panel ? panel.querySelector("button[onclick='cancelRunningQuery(this)']") : null;
+            if (!btn) return;
+            e.preventDefault();
+            cancelRunningQuery(btn);
+            return;
+        }
+
         if (e.altKey) return;
 
         // Function keys: F7 = Explain, Shift+F7 = Explain Analyze.
