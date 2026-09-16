@@ -82,6 +82,11 @@ func (s *Server) getOrCreatePool(ctx context.Context, id int64) (*pgxpool.Pool, 
 	}
 
 	mu.Lock()
+	if existing, ok := dbPools[id]; ok {
+		mu.Unlock()
+		pool.Close()
+		return existing, nil
+	}
 	dbPools[id] = pool
 	mu.Unlock()
 	log.Printf("Connected to server %d (%s:%d/%s)", id, srv.Host, srv.Port, srv.MaintenanceDb)
@@ -135,6 +140,11 @@ func (s *Server) getOrCreateDbPool(ctx context.Context, id int64, database strin
 	}
 
 	mu.Lock()
+	if existing, ok := dbSpecificPools[key]; ok {
+		mu.Unlock()
+		pool.Close()
+		return existing, nil
+	}
 	dbSpecificPools[key] = pool
 	mu.Unlock()
 	log.Printf("Connected to server %d database %q", id, database)
