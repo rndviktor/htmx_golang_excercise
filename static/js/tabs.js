@@ -812,9 +812,50 @@ function initTabShortcuts() {
     });
 }
 
+// Ctrl+S saves the active script tab to its existing path (or opens the
+// Save As dialog when it has never been saved); Ctrl+Shift+S always opens
+// Save As; Ctrl+K formats the SQL. F7 runs EXPLAIN and Shift+F7 runs
+// EXPLAIN ANALYZE on the active script tab. preventDefault stops the
+// browser's default actions, but only when an actual script tab is active
+// so the dashboard is untouched.
+function initEditorShortcuts() {
+    document.addEventListener("keydown", (e) => {
+        if (e.altKey) return;
+
+        // Function keys: F7 = Explain, Shift+F7 = Explain Analyze.
+        if (e.key === "F7" && !e.ctrlKey && !e.metaKey) {
+            const panel = document.getElementById(TAB_CONTENT_PREFIX + activeTabId);
+            const btn = panel ? panel.querySelector("button[onclick='executeExplain(this, false)']") : null;
+            if (!btn) return;
+            e.preventDefault();
+            executeExplain(btn, e.shiftKey);
+            return;
+        }
+
+        // Ctrl/Cmd combos: S = Save, Shift+S = Save As, K = Format.
+        if (!(e.ctrlKey || e.metaKey)) return;
+        const key = e.key.toLowerCase();
+        if (key !== "s" && key !== "k") return;
+        const panel = document.getElementById(TAB_CONTENT_PREFIX + activeTabId);
+        const saveBtn = panel ? panel.querySelector("button[onclick='saveScript(this)']") : null;
+        if (key === "s" && saveBtn) {
+            e.preventDefault();
+            if (e.shiftKey) saveScriptAs(saveBtn);
+            else saveScript(saveBtn);
+            return;
+        }
+        const formatBtn = panel ? panel.querySelector("button[onclick='formatSql(this)']") : null;
+        if (key === "k" && formatBtn) {
+            e.preventDefault();
+            formatSql(formatBtn);
+        }
+    });
+}
+
 document.addEventListener("DOMContentLoaded", initTabDrag);
 document.addEventListener("DOMContentLoaded", initTabScroll);
 document.addEventListener("DOMContentLoaded", initTabShortcuts);
+document.addEventListener("DOMContentLoaded", initEditorShortcuts);
 document.addEventListener("DOMContentLoaded", () => {
     const tabBar = document.getElementById(ID_TAB_BAR);
     if (tabBar) tabBar.addEventListener("click", scheduleSave);

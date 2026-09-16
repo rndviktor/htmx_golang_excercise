@@ -4,7 +4,7 @@
   <div class="flex items-center gap-2 px-2 py-1.5 bg-gray-800 border-b border-gray-700">
     <button
       onclick="saveScript(this)"
-      title="Save Query"
+      title="Save Query (Ctrl+S)"
       class="px-2 py-1 text-blue-400 hover:text-blue-300 hover:bg-gray-700 border border-gray-600 rounded text-sm inline-flex items-center justify-center">
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 3h13l3 3v15H4V3z"/>
@@ -16,7 +16,7 @@
     </button>
     <button
       onclick="saveScriptAs(this)"
-      title="Save Query As"
+      title="Save Query As (Ctrl+Shift+S)"
       class="px-2 py-1 text-blue-400 hover:text-blue-300 hover:bg-gray-700 border border-gray-600 rounded text-sm inline-flex items-center justify-center">
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 3h13l3 3v8"/>
@@ -41,7 +41,7 @@
     </button>
     <button
       onclick="executeExplain(this, false)"
-      title="Explain query (EXPLAIN)"
+      title="Explain query (EXPLAIN) — F7"
       style="margin-left:1.25em"
       class="px-2 py-1 text-blue-400 hover:text-blue-300 hover:bg-gray-700 border border-gray-600 rounded text-sm inline-flex items-center justify-center">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" stroke="currentColor"
@@ -59,7 +59,7 @@
     </button>
     <button
       onclick="executeExplain(this, true)"
-      title="Explain with timing and actual rows (EXPLAIN ANALYZE)"
+      title="Explain with timing and actual rows (EXPLAIN ANALYZE) — Shift+F7"
       class="px-2 py-1 text-blue-400 hover:text-blue-300 hover:bg-gray-700 border border-gray-600 rounded text-sm inline-flex items-center justify-center">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" stroke="currentColor"
            stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-[27px] h-[27px]">
@@ -83,7 +83,7 @@
         <path d="M 36.461 57.996 C 36.461 57.996 35.347 76.251 37.952 80.384 C 39.491 82.825 42.765 84.212 44.776 84.222 C 46.361 84.229 49.041 81.876 49.041 81.876"/>
       </svg>
     </button>
-    <button title="Format SQL" onclick="formatSql(this)"
+    <button title="Format SQL (Ctrl+K)" onclick="formatSql(this)"
       style="margin-left:1.25em"
       class="px-2 py-1 text-blue-400 hover:text-blue-300 hover:bg-gray-700 border border-gray-600 rounded text-sm inline-flex items-center justify-center">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
