@@ -1,4 +1,4 @@
-# htmx_golang_excercise
+# Pg HTMX Admin application
 
 A pgAdmin-style web application for browsing and managing PostgreSQL servers, built as a learning exercise with **Go**, **HTMX** and server-rendered HTML templates.
 
