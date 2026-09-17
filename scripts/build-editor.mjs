@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,8 +18,15 @@ await build({
 
 const vendorDir = resolve(root, "static/vendor");
 mkdirSync(vendorDir, { recursive: true });
-copyFileSync(
-    resolve(root, "node_modules/chart.js/dist/chart.umd.min.js"),
-    resolve(vendorDir, "chart.umd.min.js")
-);
-console.log("copied chart.js UMD -> static/vendor/chart.umd.min.js");
+
+await build({
+    entryPoints: [resolve(root, "static/js/chart-entry.js")],
+    bundle: true,
+    format: "esm",
+    minify: true,
+    target: "es2022",
+    outfile: resolve(vendorDir, "chart.bundle.js"),
+    sourcemap: false,
+    logLevel: "info",
+});
+console.log("built tree-shaken chart.js -> static/vendor/chart.bundle.js");
