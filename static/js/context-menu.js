@@ -28,15 +28,6 @@ function initContextMenu() {
         return d;
     }
 
-    // Table/view script labels mapped to their tab-openers, so the menu
-    // items do not need a hand-written if/else chain.
-    const SCRIPT_OPENERS = {
-        "CREATE Script": openCreateScriptTab,
-        "DELETE Script": openDeleteScriptTab,
-        "INSERT Script": openInsertScriptTab,
-        "SELECT Script": openSelectScriptTab,
-    };
-
     function openMenu(x, y, el) {
         menu.innerHTML = "";
         currentTableURL = null;
@@ -122,14 +113,7 @@ function initContextMenu() {
                 : ["CREATE Script", "INSERT Script", "SELECT Script"];
             labels.forEach((label) => {
                 const item = menuItem(label, false);
-                item.addEventListener("click", () => {
-                    const open = SCRIPT_OPENERS[label];
-                    if (open && currentTableURL) {
-                        open(currentTableURL);
-                    } else {
-                        openTab(label);
-                    }
-                });
+                item.addEventListener("click", () => openScriptTab(label, currentTableURL));
                 sub.appendChild(item);
             });
             row.append(trigger, sub);

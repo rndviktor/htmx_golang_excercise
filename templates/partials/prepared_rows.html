@@ -1,0 +1,8 @@
+{{ if .Prepared }}{{ range .Prepared }}<tr class="hover:bg-gray-700/50">
+  <td class="p-1.5 border-r border-gray-700 font-sans">{{ .Name }}</td>
+  <td class="p-1.5 border-r border-gray-700 font-sans">{{ .Owner }}</td>
+  <td class="p-1.5 border-r border-gray-700">{{ .XID }}</td>
+  <td class="p-1.5">{{ .PreparedAt }}</td>
+</tr>{{ end }}{{ else }}
+<tr><td colspan="4" class="py-6 text-center text-gray-500 font-sans text-xs"><div class="flex items-center justify-center gap-2"><svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span class="text-xs text-gray-400">No rows found</span></div></td></tr>
+{{ end }}

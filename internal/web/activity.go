@@ -2,8 +2,6 @@ package web
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,24 +33,36 @@ func (s *Server) loadPoolFromQuery(w http.ResponseWriter, r *http.Request) (*pgx
 	return pool, true
 }
 
+// matchesSearch reports whether any field contains the (already lower-cased)
+// search term. An empty term matches everything. Shared by the sessions,
+// locks and prepared-transactions listings.
+func matchesSearch(search string, fields ...string) bool {
+	if search == "" {
+		return true
+	}
+	for _, f := range fields {
+		if strings.Contains(strings.ToLower(f), search) {
+			return true
+		}
+	}
+	return false
+}
+
 type sessionRow struct {
-	PID             interface{} `json:"pid"`
-	Usename         interface{} `json:"usename"`
-	ApplicationName interface{} `json:"application_name"`
-	ClientAddr      interface{} `json:"client_addr"`
-	BackendStart    interface{} `json:"backend_start"`
-	XactStart       interface{} `json:"xact_start"`
-	State           interface{} `json:"state"`
-	WaitEventType   interface{} `json:"wait_event_type"`
-	WaitEvent       interface{} `json:"wait_event"`
-	BlockingPIDs    interface{} `json:"blocking_pids"`
+	PID             int64
+	Usename         string
+	ApplicationName string
+	ClientAddr      string
+	BackendStart    string
+	XactStart       string
+	State           string
+	WaitEvent       string
+	BlockingPIDs    string
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[sessions] request: %s", r.URL.String())
 	pool, ok := s.loadPoolFromQuery(w, r)
 	if !ok {
-		log.Printf("[sessions] loadPoolFromQuery failed")
 		return
 	}
 
@@ -61,15 +71,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	query := `
 		SELECT
-			a.pid,
-			a.usename,
-			a.application_name,
-			COALESCE(a.client_addr::text, '') AS client_addr,
-			a.backend_start,
-			a.xact_start,
-			COALESCE(a.state, '') AS state,
-			COALESCE(a.wait_event_type, '') AS wait_event_type,
-			COALESCE(a.wait_event, '') AS wait_event,
+			a.pid::bigint,
+			COALESCE(a.usename, ''),
+			COALESCE(a.application_name, ''),
+			COALESCE(a.client_addr::text, ''),
+			COALESCE(a.backend_start::text, ''),
+			COALESCE(a.xact_start::text, ''),
+			COALESCE(a.state, ''),
+			CASE WHEN a.wait_event_type IS NULL OR a.wait_event IS NULL
+				THEN '' ELSE a.wait_event_type || ': ' || a.wait_event END,
 			COALESCE((
 				SELECT string_agg(DISTINCT blocker.pid::text, ', ')
 				FROM pg_locks waiting
@@ -81,7 +91,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 					AND granted.pid != waiting.pid
 				JOIN pg_stat_activity blocker ON blocker.pid = granted.pid
 				WHERE waiting.pid = a.pid AND NOT waiting.granted
-			), '') AS blocking_pids
+			), '')
 		FROM pg_stat_activity a
 		WHERE a.pid != pg_backend_pid()
 			AND (NOT $1 OR a.state = 'active')
@@ -89,7 +99,6 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := pool.Query(r.Context(), query, activeOnly)
 	if err != nil {
-		log.Printf("[sessions] query error: %v", err)
 		http.Error(w, "Failed to query sessions: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -97,109 +106,85 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	var results []sessionRow
 	for rows.Next() {
-		var r sessionRow
-		if err := rows.Scan(&r.PID, &r.Usename, &r.ApplicationName, &r.ClientAddr,
-			&r.BackendStart, &r.XactStart, &r.State, &r.WaitEventType,
-			&r.WaitEvent, &r.BlockingPIDs); err != nil {
-			log.Printf("[sessions] scan error: %v", err)
+		var row sessionRow
+		if err := rows.Scan(&row.PID, &row.Usename, &row.ApplicationName, &row.ClientAddr,
+			&row.BackendStart, &row.XactStart, &row.State, &row.WaitEvent,
+			&row.BlockingPIDs); err != nil {
 			continue
 		}
-		// Client-side search filter
-		if search != "" {
-			fields := []string{
-				fmt.Sprintf("%v", r.PID),
-				fmt.Sprintf("%v", r.Usename),
-				fmt.Sprintf("%v", r.ApplicationName),
-				fmt.Sprintf("%v", r.ClientAddr),
-				fmt.Sprintf("%v", r.State),
-				fmt.Sprintf("%v", r.WaitEventType),
-				fmt.Sprintf("%v", r.WaitEvent),
-			}
-			found := false
-			for _, f := range fields {
-				if strings.Contains(strings.ToLower(f), search) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		if matchesSearch(search, strconv.FormatInt(row.PID, 10), row.Usename,
+			row.ApplicationName, row.ClientAddr, row.State, row.WaitEvent) {
+			results = append(results, row)
 		}
-		results = append(results, r)
 	}
 
-	log.Printf("[sessions] returning %d rows", len(results))
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	RenderPartial(w, "sessions_rows.html", map[string]any{"Sessions": results})
 }
 
 func (s *Server) handleSessionCancel(w http.ResponseWriter, r *http.Request) {
-	pool, ok := s.loadPoolFromQuery(w, r)
+	pool, pid, ok := s.loadSessionPool(w, r)
 	if !ok {
 		return
 	}
 
-	pidStr := chi.URLParam(r, "pid")
-	pid, err := strconv.ParseInt(pidStr, 10, 64)
-	if err != nil || pid < 1 {
-		http.Error(w, "Invalid PID", http.StatusBadRequest)
-		return
-	}
-
-	_, err = pool.Exec(r.Context(), "SELECT pg_cancel_backend($1)", pid)
-	if err != nil {
+	if _, err := pool.Exec(r.Context(), "SELECT pg_cancel_backend($1)", pid); err != nil {
 		http.Error(w, "Failed to cancel: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleSessionTerminate(w http.ResponseWriter, r *http.Request) {
-	pool, ok := s.loadPoolFromQuery(w, r)
+	pool, pid, ok := s.loadSessionPool(w, r)
 	if !ok {
 		return
 	}
 
-	pidStr := chi.URLParam(r, "pid")
-	pid, err := strconv.ParseInt(pidStr, 10, 64)
-	if err != nil || pid < 1 {
-		http.Error(w, "Invalid PID", http.StatusBadRequest)
-		return
-	}
-
-	_, err = pool.Exec(r.Context(), "SELECT pg_terminate_backend($1)", pid)
-	if err != nil {
+	if _, err := pool.Exec(r.Context(), "SELECT pg_terminate_backend($1)", pid); err != nil {
 		http.Error(w, "Failed to terminate: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+// loadSessionPool resolves the target database pool and the {pid} path param
+// for the session cancel/terminate endpoints. On failure it writes the error
+// response itself and returns ok=false.
+func (s *Server) loadSessionPool(w http.ResponseWriter, r *http.Request) (*pgxpool.Pool, int64, bool) {
+	pool, ok := s.loadPoolFromQuery(w, r)
+	if !ok {
+		return nil, 0, false
+	}
+
+	pid, err := strconv.ParseInt(chi.URLParam(r, "pid"), 10, 64)
+	if err != nil || pid < 1 {
+		http.Error(w, "Invalid PID", http.StatusBadRequest)
+		return nil, 0, false
+	}
+
+	return pool, pid, true
 }
 
 type lockRow struct {
-	PID                  interface{} `json:"pid"`
-	Locktype             interface{} `json:"locktype"`
-	Relation             interface{} `json:"relation"`
-	Page                 interface{} `json:"page"`
-	Tuple                interface{} `json:"tuple"`
-	VirtualTransactionID interface{} `json:"virtual_transaction_id"`
-	TransactionID        interface{} `json:"transaction_id"`
-	ClassID              interface{} `json:"classid"`
-	ObjID                interface{} `json:"objid"`
-	VirtualXIDOwner      interface{} `json:"virtual_xid_owner"`
-	Mode                 interface{} `json:"mode"`
-	Granted              interface{} `json:"granted"`
+	PID                  int64
+	Locktype             string
+	Relation             string
+	Page                 string
+	Tuple                string
+	VirtualTransactionID string
+	TransactionID        string
+	ClassID              string
+	ObjID                string
+	VirtualXIDOwner      string
+	Mode                 string
+	Granted              bool
 }
 
 func (s *Server) handleLocks(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[locks] request: %s", r.URL.String())
 	pool, ok := s.loadPoolFromQuery(w, r)
 	if !ok {
-		log.Printf("[locks] loadPoolFromQuery failed")
 		return
 	}
 
@@ -207,7 +192,7 @@ func (s *Server) handleLocks(w http.ResponseWriter, r *http.Request) {
 
 	query := `
 		SELECT
-			l.pid,
+			l.pid::bigint,
 			l.locktype,
 			COALESCE(c.relname, '') AS relation,
 			COALESCE(l.page::text, '') AS page,
@@ -232,50 +217,31 @@ func (s *Server) handleLocks(w http.ResponseWriter, r *http.Request) {
 
 	var results []lockRow
 	for rows.Next() {
-		var r lockRow
-		if err := rows.Scan(&r.PID, &r.Locktype, &r.Relation, &r.Page, &r.Tuple,
-			&r.VirtualTransactionID, &r.TransactionID, &r.ClassID, &r.ObjID,
-			&r.VirtualXIDOwner, &r.Mode, &r.Granted); err != nil {
+		var row lockRow
+		if err := rows.Scan(&row.PID, &row.Locktype, &row.Relation, &row.Page, &row.Tuple,
+			&row.VirtualTransactionID, &row.TransactionID, &row.ClassID, &row.ObjID,
+			&row.VirtualXIDOwner, &row.Mode, &row.Granted); err != nil {
 			continue
 		}
-		if search != "" {
-			fields := []string{
-				fmt.Sprintf("%v", r.PID),
-				fmt.Sprintf("%v", r.Locktype),
-				fmt.Sprintf("%v", r.Relation),
-				fmt.Sprintf("%v", r.Mode),
-				fmt.Sprintf("%v", r.Granted),
-			}
-			found := false
-			for _, f := range fields {
-				if strings.Contains(strings.ToLower(f), search) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		if matchesSearch(search, strconv.FormatInt(row.PID, 10), row.Locktype,
+			row.Relation, row.Mode, strconv.FormatBool(row.Granted)) {
+			results = append(results, row)
 		}
-		results = append(results, r)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	RenderPartial(w, "locks_rows.html", map[string]any{"Locks": results})
 }
 
 type preparedTxRow struct {
-	Name       interface{} `json:"name"`
-	Owner      interface{} `json:"owner"`
-	XID        interface{} `json:"xid"`
-	PreparedAt interface{} `json:"prepared_at"`
+	Name       string
+	Owner      string
+	XID        string
+	PreparedAt string
 }
 
 func (s *Server) handlePreparedTransactions(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[prepared-tx] request: %s", r.URL.String())
 	pool, ok := s.loadPoolFromQuery(w, r)
 	if !ok {
-		log.Printf("[prepared-tx] loadPoolFromQuery failed")
 		return
 	}
 
@@ -293,39 +259,29 @@ func (s *Server) handlePreparedTransactions(w http.ResponseWriter, r *http.Reque
 	rows, err := pool.Query(r.Context(), query)
 	if err != nil {
 		// pg_prepared_xacts requires superuser or pg_monitor membership.
-		// Return empty array on permission error rather than failing hard.
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]preparedTxRow{})
+		// Render an empty list on permission error rather than failing hard.
+		RenderPartial(w, "prepared_rows.html", map[string]any{})
 		return
 	}
 	defer rows.Close()
 
 	var results []preparedTxRow
 	for rows.Next() {
-		var r preparedTxRow
-		if err := rows.Scan(&r.Name, &r.Owner, &r.XID, &r.PreparedAt); err != nil {
+		var row preparedTxRow
+		if err := rows.Scan(&row.Name, &row.Owner, &row.XID, &row.PreparedAt); err != nil {
 			continue
 		}
-		if search != "" {
-			fields := []string{
-				fmt.Sprintf("%v", r.Name),
-				fmt.Sprintf("%v", r.Owner),
-				fmt.Sprintf("%v", r.XID),
-			}
-			found := false
-			for _, f := range fields {
-				if strings.Contains(strings.ToLower(f), search) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		if matchesSearch(search, row.Name, row.Owner, row.XID) {
+			results = append(results, row)
 		}
-		results = append(results, r)
 	}
 
+	RenderPartial(w, "prepared_rows.html", map[string]any{"Prepared": results})
+}
+
+// writeJSON is the small shared helper for the endpoints that still answer
+// with a JSON status object.
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	json.NewEncoder(w).Encode(v)
 }

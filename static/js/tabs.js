@@ -59,9 +59,13 @@ function updateMonitoringForActiveTab() {
     if (activeTabId !== TAB_DASHBOARD) {
         if (monitoringTimer) { clearInterval(monitoringTimer); monitoringTimer = null; }
         closeMonitoringKPIStream();
+        destroyCharts();
         return;
     }
     if (monitoringConn && monitoringBaseURL) {
+        // Recreate the charts now that the monitoring panel is visible so
+        // they pick up the actual canvas size.
+        destroyCharts();
         pollMonitoring();
         openMonitoringKPIStream();
     }
@@ -205,6 +209,23 @@ function formConnectionParams(form) {
     return { sid: sid, db: db };
 }
 
+// Resolves the SQL to run for a script panel: the selected text when there is
+// a selection, otherwise the whole document. Also returns the selection range
+// so the caller can restore focus after execution.
+function editorQuery(panel) {
+    const ed = window.SqlEditor;
+    const view = ed && ed.view(panel);
+    const doc = view ? ed.value(panel) : "";
+    const sel = view ? ed.selection(panel) : { from: 0, to: 0 };
+    const hasSelection = sel.from !== sel.to;
+    return {
+        query: hasSelection ? doc.substring(sel.from, sel.to) : doc,
+        from: sel.from,
+        to: sel.to,
+        hasSelection: hasSelection,
+    };
+}
+
 // -----------------------------------------------------------------------------
 // Query execution
 // -----------------------------------------------------------------------------
@@ -239,14 +260,8 @@ function executeQuery(btn, page) {
     if (!params) return;
 
     const ed = window.SqlEditor;
-    const doc = ed && ed.view(panel) ? ed.value(panel) : "";
-    const sel = ed && ed.view(panel) ? ed.selection(panel) : { from: 0, to: 0 };
-    const selStart = sel.from;
-    const selEnd = sel.to;
-    const hasSelection = selStart !== selEnd;
-    const query = hasSelection
-        ? doc.substring(selStart, selEnd)
-        : doc;
+    const q = editorQuery(panel);
+    const query = q.query;
     if (!query) return;
 
     if (!page) page = 1;
@@ -289,16 +304,17 @@ function executeQuery(btn, page) {
             const tmp = document.createElement("div");
             tmp.innerHTML = html;
             const result = tmp.querySelector(".query-result");
-            const elapsed = result.dataset.elapsed || "0";
-            const message = result.dataset.message || "";
+            const data = (result && result.dataset) || {};
+            const elapsed = data.elapsed || "0";
+            const message = data.message || "";
             if (grid && result) {
                 grid.innerHTML = result.innerHTML;
                 initDataGridResize(grid, panel);
             }
 
-            const total = parseInt(result.dataset.total) || 0;
-            const totalPages = parseInt(result.dataset.totalPages) || 1;
-            const curPage = parseInt(result.dataset.page) || 1;
+            const total = parseInt(data.total) || 0;
+            const totalPages = parseInt(data.totalPages) || 1;
+            const curPage = parseInt(data.page) || 1;
             const rows = grid ? grid.querySelectorAll("tbody tr").length : 0;
 
             logMessage(panel, "info", "Query executed in " + elapsed + "s");
@@ -324,8 +340,8 @@ function executeQuery(btn, page) {
             if (dataTab) switchOutputTab(dataTab);
             setRunningSpinner(panel, false);
 
-            if (hasSelection && ed) {
-                ed.focus(panel, { from: selStart, to: selEnd });
+            if (q.hasSelection && ed) {
+                ed.focus(panel, { from: q.from, to: q.to });
             }
         })
         .catch(async (r) => {
@@ -350,8 +366,8 @@ function executeQuery(btn, page) {
             const msgTab = panel.querySelector('[data-output-tab="messages"]');
             if (msgTab) switchOutputTab(msgTab);
 
-            if (hasSelection && ed) {
-                ed.focus(panel, { from: selStart, to: selEnd });
+            if (q.hasSelection && ed) {
+                ed.focus(panel, { from: q.from, to: q.to });
             }
         })
         .finally(() => clearInterval(ticker));
@@ -406,13 +422,7 @@ function executeExplain(btn, analyze) {
     const params = formConnectionParams(form);
     if (!params) return;
 
-    const ed = window.SqlEditor;
-    const doc = ed && ed.view(panel) ? ed.value(panel) : "";
-    const sel = ed && ed.view(panel) ? ed.selection(panel) : { from: 0, to: 0 };
-    const hasSelection = sel.from !== sel.to;
-    const query = hasSelection
-        ? doc.substring(sel.from, sel.to)
-        : doc;
+    const query = editorQuery(panel).query;
     if (!query) return;
 
     const keyword = analyze ? "EXPLAIN ANALYZE" : "EXPLAIN";
@@ -724,39 +734,28 @@ function openTab(label, query, serverID, serverName, dbName, id, saved) {
         });
 }
 
-function openSelectScriptTab(tableURL) {
-    const t = tableURLParts(tableURL);
-    fetch(t.url + "/columns-script")
-        .then((r) => r.json())
-        .then((data) => {
-            openTab("SELECT " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
-        });
-}
+// Script menu labels mapped to the server endpoint and tab-title prefix used
+// to generate the corresponding script for a table/view.
+const SCRIPT_ACTIONS = {
+    "SELECT Script": { endpoint: "columns-script", title: "SELECT" },
+    "CREATE Script": { endpoint: "create-script", title: "CREATE" },
+    "INSERT Script": { endpoint: "insert-script", title: "INSERT" },
+    "DELETE Script": { endpoint: "delete-script", title: "DELETE" },
+};
 
-function openCreateScriptTab(tableURL) {
+// Opens a script tab generated by the server for the given table/view URL.
+// Labels without a generator (e.g. "UPDATE Script") fall back to an empty tab.
+function openScriptTab(action, tableURL) {
+    const spec = SCRIPT_ACTIONS[action];
+    if (!spec || !tableURL) {
+        openTab(action);
+        return;
+    }
     const t = tableURLParts(tableURL);
-    fetch(t.url + "/create-script")
+    fetch(t.url + "/" + spec.endpoint)
         .then((r) => { if (!r.ok) throw r; return r.json(); })
         .then((data) => {
-            openTab("CREATE " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
-        });
-}
-
-function openInsertScriptTab(tableURL) {
-    const t = tableURLParts(tableURL);
-    fetch(t.url + "/insert-script")
-        .then((r) => { if (!r.ok) throw r; return r.json(); })
-        .then((data) => {
-            openTab("INSERT " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
-        });
-}
-
-function openDeleteScriptTab(tableURL) {
-    const t = tableURLParts(tableURL);
-    fetch(t.url + "/delete-script")
-        .then((r) => { if (!r.ok) throw r; return r.json(); })
-        .then((data) => {
-            openTab("DELETE " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
+            openTab(spec.title + " " + t.tableName, data.query, t.serverID, t.serverName, t.dbName);
         });
 }
 

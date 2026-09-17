@@ -1,0 +1,16 @@
+{{ if .Locks }}{{ range .Locks }}<tr class="hover:bg-gray-700/50">
+  <td class="p-1.5 border-r border-gray-700">{{ .PID }}</td>
+  <td class="p-1.5 border-r border-gray-700 font-sans">{{ .Locktype }}</td>
+  <td class="p-1.5 border-r border-gray-700 font-sans">{{ .Relation }}</td>
+  <td class="p-1.5 border-r border-gray-700">{{ .Page }}</td>
+  <td class="p-1.5 border-r border-gray-700">{{ .Tuple }}</td>
+  <td class="p-1.5 border-r border-gray-700">{{ .VirtualTransactionID }}</td>
+  <td class="p-1.5 border-r border-gray-700">{{ .TransactionID }}</td>
+  <td class="p-1.5 border-r border-gray-700">{{ .ClassID }}</td>
+  <td class="p-1.5 border-r border-gray-700">{{ .ObjID }}</td>
+  <td class="p-1.5 border-r border-gray-700">{{ .VirtualXIDOwner }}</td>
+  <td class="p-1.5 border-r border-gray-700 font-sans">{{ .Mode }}</td>
+  <td class="p-1.5 font-sans {{ if .Granted }}text-green-400{{ else }}text-red-400{{ end }}">{{ .Granted }}</td>
+</tr>{{ end }}{{ else }}
+<tr><td colspan="12" class="py-6 text-center text-gray-500 font-sans text-xs">No locks found</td></tr>
+{{ end }}

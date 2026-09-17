@@ -197,9 +197,8 @@ func (s *Server) handleServerList(w http.ResponseWriter, r *http.Request) {
 // expanded and renders nothing. A server that is not available (whether it was
 // connected earlier or never reached) renders the reconnect hint instead.
 func (s *Server) handleServerChildren(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
-	if err != nil || id < 1 {
-		http.Error(w, "Invalid server id", http.StatusBadRequest)
+	id, ok := s.requireServer(w, r)
+	if !ok {
 		return
 	}
 
@@ -228,17 +227,10 @@ func (s *Server) handleServerChildren(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderServerFolders renders the category folders shown when a server node is
-// expanded. pool-less servers render without live counts (never dialing, so
-// unreachable servers stay fast); any cached pool is only peeked at.
+// expanded. The caller has already validated the server (see requireServer).
+// pool-less servers render without live counts (never dialing, so unreachable
+// servers stay fast); any cached pool is only peeked at.
 func (s *Server) renderServerFolders(w http.ResponseWriter, r *http.Request, id int64) {
-	if _, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
-		ID:     id,
-		UserID: db.DefaultUserID,
-	}); err != nil {
-		http.Error(w, "Server not found", http.StatusNotFound)
-		return
-	}
-
 	base := fmt.Sprintf("/api/servers/%d", id)
 
 	// Folder counts (databases / roles / tablespaces) come from the cached
@@ -279,16 +271,8 @@ func (s *Server) renderServerFolders(w http.ResponseWriter, r *http.Request, id 
 // shows a gray dot, cannot be expanded, and is not re-connected on page
 // refresh. The user reconnects via the node's Refresh action.
 func (s *Server) handleServerDisconnect(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
-	if err != nil || id < 1 {
-		http.Error(w, "Invalid server id", http.StatusBadRequest)
-		return
-	}
-	if _, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
-		ID:     id,
-		UserID: db.DefaultUserID,
-	}); err != nil {
-		http.Error(w, "Server not found", http.StatusNotFound)
+	id, ok := s.requireServer(w, r)
+	if !ok {
 		return
 	}
 
@@ -301,16 +285,8 @@ func (s *Server) handleServerDisconnect(w http.ResponseWriter, r *http.Request) 
 // server. On success it un-marks the server and renders its children; on
 // failure it renders the "not available" hint so the user can retry.
 func (s *Server) handleServerReconnect(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
-	if err != nil || id < 1 {
-		http.Error(w, "Invalid server id", http.StatusBadRequest)
-		return
-	}
-	if _, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
-		ID:     id,
-		UserID: db.DefaultUserID,
-	}); err != nil {
-		http.Error(w, "Server not found", http.StatusNotFound)
+	id, ok := s.requireServer(w, r)
+	if !ok {
 		return
 	}
 
@@ -337,13 +313,40 @@ func (s *Server) renderServerUnavailable(w http.ResponseWriter) {
 	renderTree(w, nil, "Server is not available. Right-click the server and choose \"Try to reconnect\".")
 }
 
+// parseServerID validates the {serverID} route param. On failure it writes the
+// error response itself and returns ok=false.
+func parseServerID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
+	if err != nil || id < 1 {
+		http.Error(w, "Invalid server id", http.StatusBadRequest)
+		return 0, false
+	}
+	return id, true
+}
+
+// requireServer validates the {serverID} route param and that it belongs to
+// the default user. On failure it writes the error response itself.
+func (s *Server) requireServer(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, ok := parseServerID(w, r)
+	if !ok {
+		return 0, false
+	}
+	if _, err := s.DB.GetServerByID(r.Context(), sqlite.GetServerByIDParams{
+		ID:     id,
+		UserID: db.DefaultUserID,
+	}); err != nil {
+		http.Error(w, "Server not found", http.StatusNotFound)
+		return 0, false
+	}
+	return id, true
+}
+
 // loadServerPool validates the {serverID} route param and returns a live
 // pgx pool for that registered server. On failure it writes the error
 // response itself and returns ok=false.
 func (s *Server) loadServerPool(w http.ResponseWriter, r *http.Request) (*pgxpool.Pool, int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
-	if err != nil || id < 1 {
-		http.Error(w, "Invalid server id", http.StatusBadRequest)
+	id, ok := parseServerID(w, r)
+	if !ok {
 		return nil, 0, false
 	}
 
@@ -466,9 +469,8 @@ func (s *Server) handleDatabaseCategory(w http.ResponseWriter, r *http.Request) 
 // a live pgx pool connected to that specific database. On failure it writes
 // the error response itself and returns ok=false.
 func (s *Server) loadDatabasePool(w http.ResponseWriter, r *http.Request) (*pgxpool.Pool, int64, string, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
-	if err != nil || id < 1 {
-		http.Error(w, "Invalid server id", http.StatusBadRequest)
+	id, ok := parseServerID(w, r)
+	if !ok {
 		return nil, 0, "", false
 	}
 
@@ -589,9 +591,8 @@ func (s *Server) handleSchemaCategory(w http.ResponseWriter, r *http.Request) {
 // and returns a live pgx pool connected to that database. On failure it writes
 // the error response itself and returns ok=false.
 func (s *Server) loadSchemaPool(w http.ResponseWriter, r *http.Request) (*pgxpool.Pool, int64, string, string, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "serverID"), 10, 64)
-	if err != nil || id < 1 {
-		http.Error(w, "Invalid server id", http.StatusBadRequest)
+	id, ok := parseServerID(w, r)
+	if !ok {
 		return nil, 0, "", "", false
 	}
 
@@ -960,18 +961,23 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 // isRowReturning reports whether the trimmed query is one that returns a
 // result set (and can therefore be wrapped for count/pagination). All other
 // statements (DDL/DML) are executed directly by handleExecuteQuery.
+// stripLeadingComments removes leading "--" comment lines from an upper-cased,
+// trimmed SQL statement, returning "" when only comments remain.
+func stripLeadingComments(query string) string {
+	for strings.HasPrefix(query, "--") {
+		idx := strings.Index(query, "\n")
+		if idx < 0 {
+			return ""
+		}
+		query = strings.TrimSpace(query[idx+1:])
+	}
+	return query
+}
+
 func isRowReturning(query string) bool {
-	trimmed := strings.TrimSpace(strings.ToUpper(query))
+	trimmed := stripLeadingComments(strings.TrimSpace(strings.ToUpper(query)))
 	if trimmed == "" {
 		return false
-	}
-	// Skip leading comment lines.
-	for strings.HasPrefix(trimmed, "--") {
-		if idx := strings.Index(trimmed, "\n"); idx >= 0 {
-			trimmed = strings.TrimSpace(trimmed[idx+1:])
-		} else {
-			return false
-		}
 	}
 	// Advance past an optional leading "WITH x AS (...) " CTE to the final
 	// statement keyword.
@@ -996,18 +1002,7 @@ func isRowReturning(query string) bool {
 // EXPLAIN ANALYZE). Such queries return rows but cannot be wrapped as a
 // subquery, so they are executed directly.
 func isExplain(query string) bool {
-	trimmed := strings.TrimSpace(strings.ToUpper(query))
-	if trimmed == "" {
-		return false
-	}
-	// Skip leading comment lines.
-	for strings.HasPrefix(trimmed, "--") {
-		if idx := strings.Index(trimmed, "\n"); idx >= 0 {
-			trimmed = strings.TrimSpace(trimmed[idx+1:])
-		} else {
-			return false
-		}
-	}
+	trimmed := stripLeadingComments(strings.TrimSpace(strings.ToUpper(query)))
 	return strings.HasPrefix(trimmed, "EXPLAIN")
 }
 

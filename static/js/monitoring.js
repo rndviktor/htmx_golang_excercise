@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
-// Database Monitoring Dashboard – KPI cards, live charts and the SSE stream.
-// Polling only runs while the Dashboard tab is active (see
-// updateMonitoringForActiveTab).
+// Database Monitoring Dashboard – KPI cards, live charts, the SSE stream and
+// the server-rendered sessions/locks/prepared-transactions tables. Polling
+// only runs while the Dashboard tab is active (see updateMonitoringForActiveTab).
 // -----------------------------------------------------------------------------
 let monitoringTimer = null;
 let monitoringBaseURL = null;
@@ -19,46 +19,59 @@ const chartSeries = {
 };
 let charts = {};
 
+const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"];
+
+// Shared Chart.js options; the series are plain lines reusing the arrays in
+// chartSeries, which are updated in place so the chart instances can be kept.
+const CHART_OPTIONS = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: { legend: { labels: { color: "#cbd5e1", boxWidth: 12, font: { size: 10 } } } },
+    scales: {
+        x: { ticks: { color: "#64748b", maxTicksLimit: 10 }, grid: { color: "#334155" } },
+        y: { ticks: { color: "#64748b" }, grid: { color: "#1e293b", beginAtZero: true } },
+    },
+};
+
 function formatBytes(bytes) {
     if (bytes === null || bytes === undefined || bytes < 0) return "–";
-    return formatUnits(bytes, { bytes: ["B", "KB", "MB", "GB", "TB"] });
+    return formatUnits(bytes, BYTE_UNITS);
 }
 
 function formatUnits(val, units) {
     let i = 0, n = val;
-    while (n >= 1024 && i < units.bytes.length - 1) { n /= 1024; i++; }
-    return n.toFixed(i === 0 ? 0 : 1) + " " + units.bytes[i];
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i === 0 ? 0 : 1) + " " + units[i];
 }
 
-function makeChart(canvasId, type, labels, datasets) {
+// Creates a chart on first use, then just refreshes it. The datasets passed on
+// later calls are ignored because their `data` arrays are chartSeries entries
+// that are mutated in place.
+function upsertChart(canvasId, datasets) {
+    if (charts[canvasId]) {
+        charts[canvasId].update("none");
+        return;
+    }
     const canvas = document.getElementById(canvasId);
-    if (!canvas) return null;
-    if (charts[canvasId]) charts[canvasId].destroy();
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    charts[canvasId] = new Chart(ctx, {
-        type: type,
-        data: { labels: labels, datasets: datasets },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            plugins: { legend: { labels: { color: "#cbd5e1", boxWidth: 12, font: { size: 10 } } } },
-            scales: {
-                x: { ticks: { color: "#64748b", maxTicksLimit: 10 }, grid: { color: "#334155" } },
-                y: { ticks: { color: "#64748b" }, grid: { color: "#1e293b", beginAtZero: true } },
-            },
-        },
+    if (!canvas) return;
+    charts[canvasId] = new Chart(canvas.getContext("2d"), {
+        type: "line",
+        data: { labels: chartSeries.time, datasets: datasets },
+        options: CHART_OPTIONS,
     });
-    return charts[canvasId];
+}
+
+function destroyCharts() {
+    Object.values(charts).forEach((c) => c.destroy());
+    charts = {};
 }
 
 function renderMonitoringCharts() {
     const labels = chartSeries.time;
-    const datasets = [];
 
     // Cache hit ratio (line, %) — computed from cumulative hits/reads deltas.
-    makeChart("chart-cache-hit", "line", labels, [{
+    upsertChart("chart-cache-hit", [{
         label: "Cache Hit %",
         data: chartSeries.cacheHit,
         borderColor: "#3b82f6", backgroundColor: "rgba(59,130,246,0.1)",
@@ -66,7 +79,7 @@ function renderMonitoringCharts() {
     }]);
 
     // Replication lag (line, bytes).
-    makeChart("chart-replication", "line", labels, [{
+    upsertChart("chart-replication", [{
         label: "Lag (bytes)",
         data: chartSeries.replication,
         borderColor: "#a855f7", backgroundColor: "rgba(168,85,247,0.1)",
@@ -74,7 +87,7 @@ function renderMonitoringCharts() {
     }]);
 
     // Transaction throughput (line, TPS). commits+rollbacks.
-    makeChart("chart-txn", "line", labels, [{
+    upsertChart("chart-txn", [{
         label: "Commits/s",
         data: chartSeries.tps,
         borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.1)",
@@ -82,12 +95,11 @@ function renderMonitoringCharts() {
     }]);
 
     // Row operations (line). inserts / updates / deletes per second.
-    makeChart("chart-rowops", "line", labels, [
+    upsertChart("chart-rowops", [
         { label: "Inserts/s", data: chartSeries.ins, borderColor: "#3b82f6", tension: 0.3, pointRadius: 0 },
         { label: "Updates/s", data: chartSeries.upd, borderColor: "#eab308", tension: 0.3, pointRadius: 0 },
         { label: "Deletes/s", data: chartSeries.del, borderColor: "#ef4444", tension: 0.3, pointRadius: 0 },
     ]);
-
 }
 
 function updateKPIs(data) {
@@ -102,7 +114,7 @@ function updateKPIs(data) {
 
     const lagEl = document.getElementById("kpi-repl-lag");
     if (data.hasReplication) {
-        lagEl.textContent = formatUnits(data.replicationLagBytes, { bytes: ["B", "KB", "MB", "GB", "TB"] });
+        lagEl.textContent = formatUnits(data.replicationLagBytes, BYTE_UNITS);
         document.getElementById("kpi-repl-unit").textContent = "";
     } else {
         lagEl.textContent = "–";
@@ -126,6 +138,7 @@ function refreshMonitoring() {
         })
         .then((data) => {
             updateKPIs(data);
+            refreshAdminTables();
 
             // The first sample only establishes the baseline for the
             // cumulative counters (pg_stat_* hold totals since start),
@@ -140,9 +153,6 @@ function refreshMonitoring() {
                 monitoringState.updates = data.updates;
                 monitoringState.deletes = data.deletes;
                 renderMonitoringCharts();
-                if (typeof refreshSessions === 'function') refreshSessions();
-                if (typeof refreshLocks === 'function') refreshLocks();
-                if (typeof refreshPrepared === 'function') refreshPrepared();
                 return;
             }
 
@@ -160,8 +170,7 @@ function refreshMonitoring() {
             const rollbackDelta = data.xactRollback - monitoringState.xactRollback;
             monitoringState.xactCommit = data.xactCommit;
             monitoringState.xactRollback = data.xactRollback;
-            const tps = commitDelta + rollbackDelta;
-            chartSeries.tps.push(tps);
+            chartSeries.tps.push(commitDelta + rollbackDelta);
 
             // Row op rates since last sample.
             chartSeries.ins.push(data.inserts - monitoringState.inserts);
@@ -175,15 +184,10 @@ function refreshMonitoring() {
             chartSeries.replication.push(
                 data.hasReplication ? data.replicationLagBytes : 0);
 
-            // Sessions breakdown (latest snapshot).
-            if (typeof refreshSessions === 'function') refreshSessions();
-            if (typeof refreshLocks === 'function') refreshLocks();
-            if (typeof refreshPrepared === 'function') refreshPrepared();
-
             // Keep a rolling window of ~30 points.
             chartSeries.time.push(new Date().toLocaleTimeString());
-            ["cacheHit", "tps", "ins", "upd", "del", "replication", "time"].forEach((k) => {
-                if (chartSeries[k].length > 30) chartSeries[k].shift();
+            Object.values(chartSeries).forEach((series) => {
+                if (series.length > 30) series.shift();
             });
 
             renderMonitoringCharts();
@@ -244,10 +248,12 @@ function startMonitoring(serverID, dbName) {
     setDashboardTabLabel(true);
 
     // Reset cumulative counters so the first sample establishes a clean
-    // baseline and no historical spike appears.
+    // baseline and no historical spike appears. The arrays are emptied in
+    // place so the live charts keep referencing them.
+    destroyCharts();
     monitoringInitialized = false;
     monitoringState = { blksHit: 0, blksRead: 0, xactCommit: 0, xactRollback: 0, inserts: 0, updates: 0, deletes: 0 };
-    Object.keys(chartSeries).forEach((k) => { chartSeries[k] = []; });
+    Object.values(chartSeries).forEach((series) => { series.length = 0; });
 
     const defaultView = document.getElementById("dashboard-default");
     const monView = document.getElementById("dashboard-monitoring");
@@ -283,6 +289,7 @@ function stopMonitoring() {
     monitoringBaseURL = null;
     monitoringConn = null;
     closeMonitoringKPIStream();
+    destroyCharts();
     setDashboardTabLabel(false);
     const defaultView = document.getElementById("dashboard-default");
     const monView = document.getElementById("dashboard-monitoring");
@@ -303,3 +310,110 @@ function updateDashboardForTreeSelection(btn) {
         stopMonitoring();
     }
 }
+
+// -----------------------------------------------------------------------------
+// Sessions / Locks / Prepared Transactions tables. The rows are rendered
+// server-side (sessions_rows.html, locks_rows.html, prepared_rows.html) and
+// swapped into the tbody, matching the app's HTMX server-rendering approach.
+// -----------------------------------------------------------------------------
+
+function adminParams(extra) {
+    if (!monitoringConn) return null;
+    const params = new URLSearchParams({
+        server_id: monitoringConn.serverID,
+        db_name: monitoringConn.dbName,
+    });
+    Object.entries(extra || {}).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+    });
+    return params.toString();
+}
+
+function sectionValue(selector) {
+    const el = document.querySelector(selector);
+    return el ? el.value : "";
+}
+
+function emptyRow(colspan, message) {
+    const td = document.createElement("td");
+    td.colSpan = colspan;
+    td.className = "py-6 text-center text-gray-500 font-sans text-xs";
+    td.textContent = message;
+    const tr = document.createElement("tr");
+    tr.appendChild(td);
+    return tr;
+}
+
+function refreshSection(tbodyId, url, extra, colspan) {
+    const tbody = document.getElementById(tbodyId);
+    const query = adminParams(extra);
+    if (!tbody || !query) return;
+    fetch(url + "?" + query, { credentials: "same-origin" })
+        .then((r) => { if (!r.ok) throw r; return r.text(); })
+        .then((html) => { tbody.innerHTML = html; })
+        .catch(async (err) => {
+            const msg = err && err.text ? await err.text() : "request failed";
+            tbody.replaceChildren(emptyRow(colspan, msg));
+        });
+}
+
+function refreshSessions() {
+    const active = document.querySelector('#sessions-section input[name="active_only"]');
+    refreshSection("sessions-tbody", "/api/sessions", {
+        active_only: active && active.checked ? "true" : "",
+        search: sectionValue('#sessions-section input[name="session_search"]'),
+    }, 12);
+}
+
+function refreshLocks() {
+    refreshSection("locks-tbody", "/api/locks", {
+        search: sectionValue('#locks-section input[name="locks_search"]'),
+    }, 12);
+}
+
+function refreshPrepared() {
+    refreshSection("transactions-tbody", "/api/prepared-transactions", {
+        search: sectionValue('#prepared-section input[name="prepared_search"]'),
+    }, 4);
+}
+
+function refreshAdminTables() {
+    refreshSessions();
+    refreshLocks();
+    refreshPrepared();
+}
+
+function cancelSession(pid) {
+    if (!confirm("Cancel query for PID " + pid + "?")) return;
+    const query = adminParams();
+    if (!query) return;
+    fetch("/api/sessions/" + pid + "/cancel?" + query, { method: "POST", credentials: "same-origin" })
+        .then(refreshSessions);
+}
+
+function terminateSession(pid) {
+    if (!confirm("Terminate session PID " + pid + "?")) return;
+    const query = adminParams();
+    if (!query) return;
+    fetch("/api/sessions/" + pid + "?" + query, { method: "DELETE", credentials: "same-origin" })
+        .then(refreshSessions);
+}
+
+// Search/filter inputs are bound once via delegation so they keep working
+// after the auth shell swaps the dashboard markup in.
+function initAdminFilters() {
+    const timers = {};
+    const debounced = (key, fn) => {
+        clearTimeout(timers[key]);
+        timers[key] = setTimeout(fn, 300);
+    };
+    document.addEventListener("input", (e) => {
+        if (e.target.matches('#sessions-section input[name="session_search"]')) debounced("sessions", refreshSessions);
+        else if (e.target.matches('#locks-section input[name="locks_search"]')) debounced("locks", refreshLocks);
+        else if (e.target.matches('#prepared-section input[name="prepared_search"]')) debounced("prepared", refreshPrepared);
+    });
+    document.addEventListener("change", (e) => {
+        if (e.target.matches('#sessions-section input[name="active_only"]')) refreshSessions();
+    });
+}
+document.addEventListener("DOMContentLoaded", initAdminFilters);
