@@ -178,7 +178,7 @@ func migrate(database *sql.DB) error {
 // file (PGHTMX_ADMIN_DEFAULT_EMAIL / PGHTMX_ADMIN_DEFAULT_PASSWORD) and the
 // password is stored as a PBKDF2 hash, never in plain text.
 func seedDefaults(database *sql.DB) error {
-	email := env.Get("PGHTMX_ADMIN_DEFAULT_EMAIL", "admin")
+	email := env.Get("PGHTMX_ADMIN_DEFAULT_EMAIL", "admin@admin.com")
 	password := env.Get("PGHTMX_ADMIN_DEFAULT_PASSWORD", "secret")
 
 	hash, err := passwords.Hash(password)

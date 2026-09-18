@@ -115,7 +115,7 @@ sqlc generate -f internal/sqlc/sqlite/sqlc.yml
 ## Configuration
 
 - `ADDR` — listen address (default `:8080`).
-- `PGHTMX_ADMIN_DEFAULT_EMAIL` / `PGHTMX_ADMIN_DEFAULT_PASSWORD` — demo credentials, loaded from `.env` (defaults `admin` / `secret`).
+- `PGHTMX_ADMIN_DEFAULT_EMAIL` / `PGHTMX_ADMIN_DEFAULT_PASSWORD` — demo credentials, loaded from `.env` (defaults `admin@admin.com` / `secret`).
 - SQLite metadata DB is created at `pgadmin4.db` on first run (auto-migrated and seeded).
 - Session secret is a hardcoded placeholder (`auth.go`) — replace before any real deployment.
 
