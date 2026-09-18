@@ -1,0 +1,35 @@
+# Air config for the dev container. Anything matched by include_ext triggers a
+# rebuild: templates/ and static/ are embedded via go:embed, so even a .html,
+# .js or .css change rebuilds the binary. pre_cmd re-runs the esbuild bundling
+# (CodeMirror + tree-shaken Chart.js) first so the Go compile embeds fresh
+# assets. The bundled outputs are excluded, so regenerating them doesn't
+# re-trigger the watcher.
+root = "."
+tmp_dir = "/tmp/air"
+
+[build]
+  cmd = "go build -o /tmp/air/main ./cmd/server"
+  bin = "/tmp/air/main"
+  delay = 600
+  stop_on_error = true
+  send_interrupt = true
+  kill_delay = 500
+  pre_cmd = ["npm run build:editor"]
+  include_ext = ["go", "mod", "sum", "html", "js", "mjs", "css"]
+  exclude_dir = ["node_modules", ".git", "working_example"]
+  exclude_regex = [
+    ".*_test\\.go$",
+    "pgadmin4\\.db(-wal|-shm)?$",
+    "static/codemirror\\.bundle\\.js$",
+    "static/vendor/chart\\.bundle\\.js$",
+  ]
+  follow_symlink = false
+  poll = true
+  poll_interval = 500
+
+[log]
+  time = true
+  main_only = false
+  append = false
+  level = "info"
+  file = "/tmp/air/build-errors.log"

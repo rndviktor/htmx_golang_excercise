@@ -1,0 +1,7 @@
+node_modules/
+.git/
+.env
+*.md
+LICENSE
+pgadmin4.db
+working_example/
